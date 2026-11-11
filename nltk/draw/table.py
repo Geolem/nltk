@@ -1,8 +1,8 @@
 # Natural Language Toolkit: Table widget
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -10,9 +10,7 @@ Tkinter widgets for displaying multi-column listboxes and tables.
 """
 
 import operator
-
 from tkinter import Frame, Label, Listbox, Scrollbar, Tk
-
 
 ######################################################################
 # Multi-Column Listbox
@@ -23,7 +21,7 @@ class MultiListbox(Frame):
     """
     A multi-column listbox, where the current selection applies to an
     entire row.  Based on the MultiListbox Tkinter widget
-    recipe from the Python Cookbook (http://code.activestate.com/recipes/52266/)
+    recipe from the Python Cookbook (https://code.activestate.com/recipes/52266/)
 
     For the most part, ``MultiListbox`` methods delegate to its
     contained listboxes.  For any methods that do not have docstrings,
@@ -70,7 +68,7 @@ class MultiListbox(Frame):
 
         :param columns: Specifies what columns should be included in
             the new multi-column listbox.  If ``columns`` is an integer,
-            the it is the number of columns to include.  If it is
+            then it is the number of columns to include.  If it is
             a list, then its length indicates the number of columns
             to include; and each element of the list will be used as
             a label for the corresponding column.
@@ -78,8 +76,8 @@ class MultiListbox(Frame):
         :param cnf, kw: Configuration parameters for this widget.
             Use ``label_*`` to configure all labels; and ``listbox_*``
             to configure all listboxes.  E.g.:
-
-                >>> mlb = MultiListbox(master, 5, label_foreground='red')
+                >>> root = Tk()  # doctest: +SKIP
+                >>> MultiListbox(root, ["Subject", "Sender", "Date"], label_foreground='red').pack()  # doctest: +SKIP
         """
         # If columns was specified as an int, convert it to a list.
         if isinstance(columns, int):
@@ -125,18 +123,18 @@ class MultiListbox(Frame):
             # Clicking or dragging selects:
             lb.bind("<Button-1>", self._select)
             lb.bind("<B1-Motion>", self._select)
-            # Scroll whell scrolls:
+            # Scroll wheel scrolls:
             lb.bind("<Button-4>", lambda e: self._scroll(-1))
             lb.bind("<Button-5>", lambda e: self._scroll(+1))
             lb.bind("<MouseWheel>", lambda e: self._scroll(e.delta))
             # Button 2 can be used to scan:
             lb.bind("<Button-2>", lambda e: self.scan_mark(e.x, e.y))
             lb.bind("<B2-Motion>", lambda e: self.scan_dragto(e.x, e.y))
-            # Dragging outside the window has no effect (diable
+            # Dragging outside the window has no effect (disable
             # the default listbox behavior, which scrolls):
             lb.bind("<B1-Leave>", lambda e: "break")
             # Columns can be resized by dragging them:
-            l.bind("<Button-1>", self._resize_column)
+            lb.bind("<Button-1>", self._resize_column)
 
         # Columns can be resized by dragging them.  (This binding is
         # used if they click on the grid between columns:)
@@ -195,7 +193,7 @@ class MultiListbox(Frame):
         x1 = event.x + event.widget.winfo_x()
         x2 = lb.winfo_x() + lb.winfo_width()
 
-        lb["width"] = max(3, lb["width"] + (x1 - x2) // charwidth)
+        lb["width"] = max(3, int(lb["width"] + (x1 - x2) // charwidth))
 
     def _resize_column_buttonrelease_cb(self, event):
         event.widget.unbind("<ButtonRelease-%d>" % event.num)
@@ -302,12 +300,13 @@ class MultiListbox(Frame):
         Configure this widget.  Use ``label_*`` to configure all
         labels; and ``listbox_*`` to configure all listboxes.  E.g.:
 
-                >>> mlb = MultiListbox(master, 5)
-                >>> mlb.configure(label_foreground='red')
-                >>> mlb.configure(listbox_foreground='red')
+                >>> master = Tk()  # doctest: +SKIP
+                >>> mlb = MultiListbox(master, 5)  # doctest: +SKIP
+                >>> mlb.configure(label_foreground='red')  # doctest: +SKIP
+                >>> mlb.configure(listbox_foreground='red')  # doctest: +SKIP
         """
         cnf = dict(list(cnf.items()) + list(kw.items()))
-        for (key, val) in list(cnf.items()):
+        for key, val in list(cnf.items()):
             if key.startswith("label_") or key.startswith("label-"):
                 for label in self._labels:
                     label.configure({key[6:]: val})
@@ -342,7 +341,7 @@ class MultiListbox(Frame):
         lb = self._listboxes[col_index]
 
         cnf = dict(list(cnf.items()) + list(kw.items()))
-        for (key, val) in list(cnf.items()):
+        for key, val in list(cnf.items()):
             if key in (
                 "background",
                 "bg",
@@ -383,7 +382,7 @@ class MultiListbox(Frame):
                     "rows should be tuples whose length "
                     "is equal to the number of columns"
                 )
-        for (lb, elts) in zip(self._listboxes, list(zip(*rows))):
+        for lb, elts in zip(self._listboxes, list(zip(*rows))):
             lb.insert(index, *elts)
 
     def get(self, first, last=None):
@@ -584,18 +583,18 @@ class Table:
     A display widget for a table of values, based on a ``MultiListbox``
     widget.  For many purposes, ``Table`` can be treated as a
     list-of-lists.  E.g., table[i] is a list of the values for row i;
-    and table.append(row) adds a new row with the given lits of
+    and table.append(row) adds a new row with the given list of
     values.  Individual cells can be accessed using table[i,j], which
     refers to the j-th column of the i-th row.  This can be used to
     both read and write values from the table.  E.g.:
 
-        >>> table[i,j] = 'hello'
+        >>> table[i,j] = 'hello'  # doctest: +SKIP
 
     The column (j) can be given either as an index number, or as a
     column name.  E.g., the following prints the value in the 3rd row
     for the 'First Name' column:
 
-        >>> print(table[3, 'First Name'])
+        >>> print(table[3, 'First Name'])  # doctest: +SKIP
         John
 
     You can configure the colors for individual rows, columns, or
@@ -628,7 +627,7 @@ class Table:
         click_to_sort=True,
         reprfunc=None,
         cnf={},
-        **kw
+        **kw,
     ):
         """
         Construct a new Table widget.
@@ -641,7 +640,7 @@ class Table:
             and can be used as an index when reading or writing
             cell values from the table.
         :type rows: list(list)
-        :param rows: A list of row values used to initialze the table.
+        :param rows: A list of row values used to initialize the table.
             Each row value should be a tuple of cell values, one for
             each column in the row.
         :type scrollbar: bool
@@ -665,7 +664,7 @@ class Table:
         self._reprfunc = reprfunc
         self._frame = Frame(master)
 
-        self._column_name_to_index = dict((c, i) for (i, c) in enumerate(column_names))
+        self._column_name_to_index = {c: i for (i, c) in enumerate(column_names)}
 
         # Make a copy of the rows & check that it's valid.
         if rows is None:
@@ -779,7 +778,7 @@ class Table:
         """
         Add new rows at the end of the table.
 
-        :param rowvalues: A list of row values used to initialze the
+        :param rowvalues: A list of row values used to initialize the
             table.  Each row value should be a tuple of cell values,
             one for each column in the row.
         """
@@ -968,7 +967,7 @@ class Table:
         """
         if order not in ("ascending", "descending", "toggle"):
             raise ValueError(
-                'sort_by(): order should be "ascending", ' '"descending", or "toggle".'
+                'sort_by(): order should be "ascending", "descending", or "toggle".'
             )
         column_index = self.column_index(column_index)
         config_cookie = self._save_config_info(index_by_id=True)
@@ -1023,15 +1022,15 @@ class Table:
             self._mlb.insert("end", row)
 
     def _get_itemconfig(self, r, c):
-        return dict(
-            (k, self._mlb.itemconfig(r, c, k)[-1])
+        return {
+            k: self._mlb.itemconfig(r, c, k)[-1]
             for k in (
                 "foreground",
                 "selectforeground",
                 "background",
                 "selectbackground",
             )
-        )
+        }
 
     def _save_config_info(self, row_indices=None, index_by_id=False):
         """
@@ -1059,18 +1058,17 @@ class Table:
 
         # Look up the color configuration info for each row.
         if index_by_id:
-            config = dict(
-                (
-                    id(self._rows[r]),
-                    [self._get_itemconfig(r, c) for c in range(self._num_columns)],
-                )
+            config = {
+                id(self._rows[r]): [
+                    self._get_itemconfig(r, c) for c in range(self._num_columns)
+                ]
                 for r in row_indices
-            )
+            }
         else:
-            config = dict(
-                (r, [self._get_itemconfig(r, c) for c in range(self._num_columns)])
+            config = {
+                r: [self._get_itemconfig(r, c) for c in range(self._num_columns)]
                 for r in row_indices
-            )
+            }
 
         return selection, config
 
@@ -1132,6 +1130,7 @@ class Table:
 # Demo/Test Function
 ######################################################################
 
+
 # update this to use new WordNet API
 def demo():
     root = Tk()
@@ -1145,8 +1144,7 @@ def demo():
     )
     table.pack(expand=True, fill="both")
 
-    from nltk.corpus import wordnet
-    from nltk.corpus import brown
+    from nltk.corpus import brown, wordnet
 
     for word, pos in sorted(set(brown.tagged_words()[:500])):
         if pos[0] != "N":
@@ -1155,11 +1153,11 @@ def demo():
         for synset in wordnet.synsets(word):
             try:
                 hyper_def = synset.hypernyms()[0].definition()
-            except:
+            except Exception:
                 hyper_def = "*none*"
             try:
                 hypo_def = synset.hypernyms()[0].definition()
-            except:
+            except Exception:
                 hypo_def = "*none*"
             table.append([word, synset.definition(), hyper_def, hypo_def])
 

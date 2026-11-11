@@ -1,10 +1,10 @@
 # Natural Language Toolkit: Plaintext Corpus Reader
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Steven Bird <stevenbird1@gmail.com>
 #         Edward Loper <edloper@gmail.com>
 #         Nitin Madnani <nmadnani@umiacs.umd.edu>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -12,10 +12,9 @@ A reader for corpora that consist of plaintext documents.
 """
 
 import nltk.data
-from nltk.tokenize import *
-
-from nltk.corpus.reader.util import *
 from nltk.corpus.reader.api import *
+from nltk.corpus.reader.util import *
+from nltk.tokenize import *
 
 
 class PlaintextCorpusReader(CorpusReader):
@@ -23,7 +22,7 @@ class PlaintextCorpusReader(CorpusReader):
     Reader for corpora that consist of plaintext documents.  Paragraphs
     are assumed to be split using blank lines.  Sentences and words can
     be tokenized using the default tokenizers, or by custom tokenizers
-    specificed as parameters to the constructor.
+    specified as parameters to the constructor.
 
     This corpus reader can be customized (e.g., to skip preface
     sections of specific document formats) by creating a subclass and
@@ -40,7 +39,7 @@ class PlaintextCorpusReader(CorpusReader):
         root,
         fileids,
         word_tokenizer=WordPunctTokenizer(),
-        sent_tokenizer=nltk.data.LazyLoader("tokenizers/punkt/english.pickle"),
+        sent_tokenizer=None,
         para_block_reader=read_blankline_block,
         encoding="utf8",
     ):
@@ -86,7 +85,10 @@ class PlaintextCorpusReader(CorpusReader):
         :rtype: list(list(str))
         """
         if self._sent_tokenizer is None:
-            raise ValueError("No sentence tokenizer for this corpus")
+            try:
+                self._sent_tokenizer = PunktTokenizer()
+            except Exception:
+                raise ValueError("No sentence tokenizer for this corpus")
 
         return concat(
             [
@@ -103,7 +105,10 @@ class PlaintextCorpusReader(CorpusReader):
         :rtype: list(list(list(str)))
         """
         if self._sent_tokenizer is None:
-            raise ValueError("No sentence tokenizer for this corpus")
+            try:
+                self._sent_tokenizer = PunktTokenizer()
+            except Exception:
+                raise ValueError("No sentence tokenizer for this corpus")
 
         return concat(
             [
@@ -158,35 +163,40 @@ class CategorizedPlaintextCorpusReader(CategorizedCorpusReader, PlaintextCorpusR
         PlaintextCorpusReader.__init__(self, *args, **kwargs)
 
 
-# FIXME: Is there a better way? How to not hardcode this?
-#       Possibly, add a language kwargs to CategorizedPlaintextCorpusReader to
-#       override the `sent_tokenizer`.
 class PortugueseCategorizedPlaintextCorpusReader(CategorizedPlaintextCorpusReader):
+    """
+    This class is identical with CategorizedPlaintextCorpusReader,
+    except that it initializes a Portuguese PunktTokenizer:
+
+    >>> from nltk.corpus import machado
+    >>> print(machado._sent_tokenizer._lang)
+    portuguese
+
+    """
+
     def __init__(self, *args, **kwargs):
-        CategorizedCorpusReader.__init__(self, kwargs)
-        kwargs["sent_tokenizer"] = nltk.data.LazyLoader(
-            "tokenizers/punkt/portuguese.pickle"
-        )
-        PlaintextCorpusReader.__init__(self, *args, **kwargs)
+        CategorizedPlaintextCorpusReader.__init__(self, *args, **kwargs)
+        # Fixed (@ekaf 2025), new way to invoke Punkt:
+        self._sent_tokenizer = PunktTokenizer("portuguese")
 
 
 class EuroparlCorpusReader(PlaintextCorpusReader):
-
     """
     Reader for Europarl corpora that consist of plaintext documents.
     Documents are divided into chapters instead of paragraphs as
     for regular plaintext documents. Chapters are separated using blank
     lines. Everything is inherited from ``PlaintextCorpusReader`` except
     that:
-      - Since the corpus is pre-processed and pre-tokenized, the
-        word tokenizer should just split the line at whitespaces.
-      - For the same reason, the sentence tokenizer should just
-        split the paragraph at line breaks.
-      - There is a new 'chapters()' method that returns chapters instead
-        instead of paragraphs.
-      - The 'paras()' method inherited from PlaintextCorpusReader is
-        made non-functional to remove any confusion between chapters
-        and paragraphs for Europarl.
+
+    - Since the corpus is pre-processed and pre-tokenized, the
+      word tokenizer should just split the line at whitespaces.
+    - For the same reason, the sentence tokenizer should just
+      split the paragraph at line breaks.
+    - There is a new 'chapters()' method that returns chapters instead
+      instead of paragraphs.
+    - The 'paras()' method inherited from PlaintextCorpusReader is
+      made non-functional to remove any confusion between chapters
+      and paragraphs for Europarl.
     """
 
     def _read_word_block(self, stream):

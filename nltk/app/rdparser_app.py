@@ -1,8 +1,8 @@
 # Natural Language Toolkit: Recursive Descent Parser Application
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -64,14 +64,14 @@ Keyboard Shortcuts::
       [q]\t Quit
 """
 
+from tkinter import Button, Frame, IntVar, Label, Listbox, Menu, Scrollbar, Tk
 from tkinter.font import Font
-from tkinter import Listbox, IntVar, Button, Frame, Label, Menu, Scrollbar, Tk
 
+from nltk.draw import CFGEditor, TreeSegmentWidget, tree_to_treesegment
+from nltk.draw.util import CanvasFrame, EntryDialog, ShowText, TextWidget
+from nltk.parse import SteppingRecursiveDescentParser
 from nltk.tree import Tree
 from nltk.util import in_idle
-from nltk.parse import SteppingRecursiveDescentParser
-from nltk.draw.util import TextWidget, ShowText, CanvasFrame, EntryDialog
-from nltk.draw import CFGEditor, TreeSegmentWidget, tree_to_treesegment
 
 
 class RecursiveDescentApp:
@@ -708,7 +708,7 @@ class RecursiveDescentApp:
             from tkinter.messagebox import Message
 
             Message(message=ABOUT, title=TITLE).show()
-        except:
+        except Exception:
             ShowText(self._top, TITLE, ABOUT)
 
     def help(self, *e):
@@ -722,7 +722,7 @@ class RecursiveDescentApp:
                 width=75,
                 font="fixed",
             )
-        except:
+        except Exception:
             ShowText(
                 self._top,
                 "Help: Recursive Descent Parser Application",

@@ -1,46 +1,47 @@
 # Natural Language Toolkit: Concordance Application
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Sumukh Ghodke <sghodke@csse.unimelb.edu.au>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
+import queue as q
 import re
 import threading
-
-import queue as q
-from tkinter.font import Font
 from tkinter import (
-    Tk,
-    Button,
     END,
+    LEFT,
+    SUNKEN,
+    Button,
     Entry,
     Frame,
     IntVar,
-    LEFT,
     Label,
     Menu,
     OptionMenu,
-    SUNKEN,
     Scrollbar,
     StringVar,
     Text,
+    Tk,
 )
+from tkinter.font import Font
 
+from nltk import redos
 from nltk.corpus import (
-    cess_cat,
-    brown,
-    nps_chat,
-    treebank,
-    sinica_treebank,
     alpino,
-    indian,
-    floresta,
-    mac_morpho,
+    brown,
+    cess_cat,
     cess_esp,
+    floresta,
+    indian,
+    mac_morpho,
+    nps_chat,
+    sinica_treebank,
+    treebank,
 )
-from nltk.util import in_idle
 from nltk.draw.util import ShowText
+from nltk.termsec import safe_print
+from nltk.util import in_idle
 
 WORD_OR_TAG = "[^/ ]+"
 BOUNDARY = r"\b"
@@ -107,8 +108,8 @@ _CORPORA = {
         tagset="universal"
     ),
     "Portuguese: MAC-MORPHO Corpus (Brazil)": lambda: mac_morpho.tagged_sents(),
-    "Portuguese: MAC-MORPHO Corpus (Brazil, simplified)": lambda: mac_morpho.tagged_sents(
-        tagset="universal"
+    "Portuguese: MAC-MORPHO Corpus (Brazil, simplified)": lambda: (
+        mac_morpho.tagged_sents(tagset="universal")
     ),
     "Spanish: CESS-ESP Corpus (simplified)": lambda: cess_esp.tagged_sents(
         tagset="universal"
@@ -283,7 +284,7 @@ class ConcordanceSearchView:
             self.var,
             self.model.DEFAULT_CORPUS,
             command=self.corpus_selected,
-            *self.model.non_default_corpora()
+            *self.model.non_default_corpora(),
         )
         om["borderwidth"] = 0
         om["highlightthickness"] = 1
@@ -401,7 +402,7 @@ class ConcordanceSearchView:
             from tkinter.messagebox import Message
 
             Message(message=ABOUT, title=TITLE, parent=self.main_frame).show()
-        except:
+        except Exception:
             ShowText(self.top, TITLE, ABOUT)
 
     def _bind_event_handlers(self):
@@ -653,7 +654,7 @@ class ConcordanceSearchModel:
                 ]
                 self.model.queue.put(CORPUS_LOADED_EVENT)
             except Exception as e:
-                print(e)
+                safe_print(e)
                 self.model.queue.put(ERROR_LOADING_CORPUS_EVENT)
 
     class SearchCorpus(threading.Thread):
@@ -666,8 +667,11 @@ class ConcordanceSearchModel:
             sent_pos, i, sent_count = [], 0, 0
             for sent in self.model.tagged_sents[self.model.last_sent_searched :]:
                 try:
-                    m = re.search(q, sent)
-                except re.error:
+                    # redos.search bounds compile and match (wall-clock) time; a
+                    # hostile query raises re.error (bad), ValueError (compile-time
+                    # DoS) or TimeoutError (match ReDoS), all shown as SEARCH_ERROR.
+                    m = redos.search(q, sent)
+                except (re.error, ValueError, TimeoutError):
                     self.model.reset_results()
                     self.model.queue.put(SEARCH_ERROR_EVENT)
                     return
@@ -689,8 +693,8 @@ class ConcordanceSearchModel:
         def processed_query(self):
             new = []
             for term in self.model.query.split():
-                term = re.sub(r"\.", r"[^/ ]", term)
-                if re.match("[A-Z]+$", term):
+                term = redos.sub(r"\.", r"[^/ ]", term)
+                if redos.match("[A-Z]+$", term):
                     new.append(BOUNDARY + WORD_OR_TAG + "/" + term + BOUNDARY)
                 elif "/" in term:
                     new.append(BOUNDARY + term + BOUNDARY)

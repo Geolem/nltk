@@ -1,48 +1,47 @@
 # Natural Language Toolkit: Collocations Application
 # Much of the GUI code is imported from concordance.py; We intend to merge these tools together
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Sumukh Ghodke <sghodke@csse.unimelb.edu.au>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 #
 
 
-import threading
-
 import queue as q
-from tkinter.font import Font
+import threading
 from tkinter import (
-    Button,
     END,
+    LEFT,
+    SUNKEN,
+    Button,
     Frame,
     IntVar,
-    LEFT,
     Label,
     Menu,
     OptionMenu,
-    SUNKEN,
     Scrollbar,
     StringVar,
     Text,
     Tk,
 )
+from tkinter.font import Font
 
 from nltk.corpus import (
-    cess_cat,
-    brown,
-    nps_chat,
-    treebank,
-    sinica_treebank,
     alpino,
-    indian,
+    brown,
+    cess_cat,
+    cess_esp,
     floresta,
+    indian,
     mac_morpho,
     machado,
-    cess_esp,
+    nps_chat,
+    sinica_treebank,
+    treebank,
 )
-from nltk.util import in_idle
 from nltk.probability import FreqDist
-
+from nltk.termsec import safe_print
+from nltk.util import in_idle
 
 CORPUS_LOADED_EVENT = "<<CL_EVENT>>"
 ERROR_LOADING_CORPUS_EVENT = "<<ELC_EVENT>>"
@@ -126,7 +125,7 @@ class CollocationsView:
             self.var,
             self.model.DEFAULT_CORPUS,
             command=self.corpus_selected,
-            *self.model.non_default_corpora()
+            *self.model.non_default_corpora(),
         )
         om["borderwidth"] = 0
         om["highlightthickness"] = 1
@@ -421,7 +420,7 @@ class CollocationsModel:
                 self.model.collocations = list(map(itemgetter(0), scored))
                 self.model.queue.put(CORPUS_LOADED_EVENT)
             except Exception as e:
-                print(e)
+                safe_print(e)
                 self.model.queue.put(ERROR_LOADING_CORPUS_EVENT)
 
 

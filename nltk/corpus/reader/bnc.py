@@ -1,14 +1,15 @@
 # Natural Language Toolkit: Plaintext Corpus Reader
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """Corpus reader for the XML version of the British National Corpus."""
 
 from nltk.corpus.reader.util import concat
-from nltk.corpus.reader.xmldocs import XMLCorpusReader, XMLCorpusView, ElementTree
+from nltk.corpus.reader.xmldocs import XMLCorpusReader, XMLCorpusView
+from nltk.xmlsec import parse as safe_parse
 
 
 class BNCCorpusReader(XMLCorpusReader):
@@ -19,7 +20,7 @@ class BNCCorpusReader(XMLCorpusReader):
     ``words()``, ``sents()``, ``tagged_words()``, and ``tagged_sents()``.
 
     You can obtain the full version of the BNC corpus at
-    http://www.ota.ox.ac.uk/desc/2554
+    https://www.ota.ox.ac.uk/desc/2554
 
     If you extracted the archive to a directory called `BNC`, then you can
     instantiate the reader as::
@@ -113,7 +114,8 @@ class BNCCorpusReader(XMLCorpusReader):
         """
         result = []
 
-        xmldoc = ElementTree.parse(fileid).getroot()
+        with fileid.open() as fp:
+            xmldoc = safe_parse(fp).getroot()
         for xmlsent in xmldoc.findall(".//s"):
             sent = []
             for xmlword in _all_xmlwords_in(xmlsent):
@@ -138,14 +140,26 @@ class BNCCorpusReader(XMLCorpusReader):
         return result
 
 
-def _all_xmlwords_in(elt, result=None):
+#: Bound recursion over nested XML so an adversarially deep corpus file raises
+#: ValueError instead of an uncaught RecursionError (CWE-674).
+MAX_XML_DEPTH = 500
+
+
+def _all_xmlwords_in(elt, result=None, _depth=0, max_depth=None):
+    if max_depth is None:
+        max_depth = MAX_XML_DEPTH
+    if _depth > max_depth:
+        raise ValueError(
+            f"XML nesting depth exceeds MAX_XML_DEPTH ({max_depth}); "
+            "the input may be adversarially deep."
+        )
     if result is None:
         result = []
     for child in elt:
         if child.tag in ("c", "w"):
             result.append(child)
         else:
-            _all_xmlwords_in(child, result)
+            _all_xmlwords_in(child, result, _depth + 1, max_depth)
     return result
 
 
@@ -165,9 +179,16 @@ class BNCWordView(XMLCorpusView):
     A stream backed corpus view specialized for use with the BNC corpus.
     """
 
-    tags_to_ignore = set(
-        ["pb", "gap", "vocal", "event", "unclear", "shift", "pause", "align"]
-    )
+    tags_to_ignore = {
+        "pb",
+        "gap",
+        "vocal",
+        "event",
+        "unclear",
+        "shift",
+        "pause",
+        "align",
+    }
     """These tags are ignored. For their description refer to the
     technical documentation, for example,
     http://www.natcorp.ox.ac.uk/docs/URG/ref-vocal.html

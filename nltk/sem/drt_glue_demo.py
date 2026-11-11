@@ -3,33 +3,25 @@
 #
 # Author: Dan Garrette <dhgarrette@gmail.com>
 #
-# Copyright (C) 2001-2021 NLTK Project
-# URL: <http://nltk.org/>
+# Copyright (C) 2001-2026 NLTK Project
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 try:
-    from tkinter import (
-        Button,
-        Frame,
-        IntVar,
-        Label,
-        Listbox,
-        Menu,
-        Scrollbar,
-        Tk,
-    )
+    from tkinter import Button, Frame, IntVar, Label, Listbox, Menu, Scrollbar, Tk
     from tkinter.font import Font
+
     from nltk.draw.util import CanvasFrame, ShowText
 
 except ImportError:
     """Ignore ImportError because tkinter might not be available."""
 
-from nltk.util import in_idle
-from nltk.tag import RegexpTagger
 from nltk.parse import MaltParser
-from nltk.sem.logic import Variable
 from nltk.sem.drt import DrsDrawer, DrtVariableExpression
 from nltk.sem.glue import DrtGlue
+from nltk.sem.logic import Variable
+from nltk.tag import RegexpTagger
+from nltk.util import in_idle
 
 
 class DrtGlueDemo:
@@ -410,7 +402,7 @@ class DrtGlueDemo:
             from tkinter.messagebox import Message
 
             Message(message=ABOUT, title=TITLE).show()
-        except:
+        except Exception:
             ShowText(self._top, TITLE, ABOUT)
 
     def postscript(self, *e):

@@ -1,10 +1,10 @@
 # Natural Language Toolkit: Sequential Backoff Taggers
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
 #         Steven Bird <stevenbird1@gmail.com> (minor additions)
 #         Tiago Tresoldi <tresoldi@users.sf.net> (original affix tagger)
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -17,17 +17,16 @@ determine a tag for the specified token, then its backoff tagger is
 consulted instead.  Any SequentialBackoffTagger may serve as a
 backoff tagger for any other SequentialBackoffTagger.
 """
+
 import ast
 from abc import abstractmethod
+from typing import List, Optional, Tuple
 
-import re
-
-from nltk.probability import ConditionalFreqDist
+from nltk import jsontags, redos
 from nltk.classify import NaiveBayesClassifier
-
-from nltk.tag.api import TaggerI, FeaturesetTaggerI
-
-from nltk import jsontags
+from nltk.probability import ConditionalFreqDist
+from nltk.tag.api import FeaturesetTaggerI, TaggerI
+from nltk.termsec import safe_print
 
 
 ######################################################################
@@ -149,7 +148,7 @@ class ContextTagger(SequentialBackoffTagger):
         return len(self._context_to_tag)
 
     def __repr__(self):
-        return "<{}: size={}>".format(self.__class__.__name__, self.size())
+        return f"<{self.__class__.__name__}: size={self.size()}>"
 
     def _train(self, tagged_corpus, cutoff=0, verbose=False):
         """
@@ -207,8 +206,12 @@ class ContextTagger(SequentialBackoffTagger):
             size = len(self._context_to_tag)
             backoff = 100 - (hit_count * 100.0) / token_count
             pruning = 100 - (size * 100.0) / len(fd.conditions())
-            print("[Trained Unigram tagger:", end=" ")
-            print("size={}, backoff={:.2f}%, pruning={:.2f}%]".format(size, backoff, pruning))
+            safe_print("[Trained Unigram tagger:", end=" ")
+            safe_print(
+                "size={}, backoff={:.2f}%, pruning={:.2f}%]".format(
+                    size, backoff, pruning
+                )
+            )
 
 
 ######################################################################
@@ -252,7 +255,7 @@ class DefaultTagger(SequentialBackoffTagger):
         return self._tag  # ignore token and history
 
     def __repr__(self):
-        return "<DefaultTagger: tag={}>".format(self._tag)
+        return f"<DefaultTagger: tag={self._tag}>"
 
 
 @jsontags.register_tag
@@ -335,7 +338,7 @@ class UnigramTagger(NgramTagger):
         >>> test_sent = brown.sents(categories='news')[0]
         >>> unigram_tagger = UnigramTagger(brown.tagged_sents(categories='news')[:500])
         >>> for tok, tag in unigram_tagger.tag(test_sent):
-        ...     print("({}, {}), ".format(tok, tag))
+        ...     print("({}, {}), ".format(tok, tag)) # doctest: +NORMALIZE_WHITESPACE
         (The, AT), (Fulton, NP-TL), (County, NN-TL), (Grand, JJ-TL),
         (Jury, NN-TL), (said, VBD), (Friday, NR), (an, AT),
         (investigation, NN), (of, IN), (Atlanta's, NP$), (recent, JJ),
@@ -448,7 +451,6 @@ class AffixTagger(ContextTagger):
         cutoff=0,
         verbose=False,
     ):
-
         self._check_params(train, model)
 
         super().__init__(model, backoff)
@@ -489,7 +491,7 @@ class AffixTagger(ContextTagger):
 
 @jsontags.register_tag
 class RegexpTagger(SequentialBackoffTagger):
-    """
+    r"""
     Regular Expression Tagger
 
     The RegexpTagger assigns tags to tokens by comparing their
@@ -501,7 +503,7 @@ class RegexpTagger(SequentialBackoffTagger):
         >>> from nltk.tag import RegexpTagger
         >>> test_sent = brown.sents(categories='news')[0]
         >>> regexp_tagger = RegexpTagger(
-        ...     [(r'^-?[0-9]+(.[0-9]+)?$', 'CD'),   # cardinal numbers
+        ...     [(r'^-?[0-9]+(\.[0-9]+)?$', 'CD'),  # cardinal numbers
         ...      (r'(The|the|A|a|An|an)$', 'AT'),   # articles
         ...      (r'.*able$', 'JJ'),                # adjectives
         ...      (r'.*ness$', 'NN'),                # nouns formed from adjectives
@@ -513,7 +515,7 @@ class RegexpTagger(SequentialBackoffTagger):
         ... ])
         >>> regexp_tagger
         <Regexp Tagger: size=9>
-        >>> regexp_tagger.tag(test_sent)
+        >>> regexp_tagger.tag(test_sent) # doctest: +NORMALIZE_WHITESPACE
         [('The', 'AT'), ('Fulton', 'NN'), ('County', 'NN'), ('Grand', 'NN'), ('Jury', 'NN'),
         ('said', 'NN'), ('Friday', 'NN'), ('an', 'AT'), ('investigation', 'NN'), ('of', 'NN'),
         ("Atlanta's", 'NNS'), ('recent', 'NN'), ('primary', 'NN'), ('election', 'NN'),
@@ -524,7 +526,7 @@ class RegexpTagger(SequentialBackoffTagger):
     :type regexps: list(tuple(str, str))
     :param regexps: A list of ``(regexp, tag)`` pairs, each of
         which indicates that a word matching ``regexp`` should
-        be tagged with ``tag``.  The pairs will be evalutated in
+        be tagged with ``tag``.  The pairs will be evaluated in
         order.  If none of the regexps match a word, then the
         optional backoff tagger is invoked, else it is
         assigned the tag None.
@@ -532,16 +534,20 @@ class RegexpTagger(SequentialBackoffTagger):
 
     json_tag = "nltk.tag.sequential.RegexpTagger"
 
-    def __init__(self, regexps, backoff=None):
-        """
-        """
+    def __init__(self, regexps: list[tuple[str, str]], backoff: TaggerI | None = None):
         super().__init__(backoff)
-        try:
-            self._regexps = [(re.compile(regexp), tag,) for regexp, tag in regexps]
-        except Exception as e:
-            raise Exception(
-                'Invalid RegexpTagger regexp:', str(e), 'regexp:', regexp, 'tag:', tag
-            ) from e
+        self._regexps = []
+        for regexp, tag in regexps:
+            try:
+                # ``regexp`` is caller-supplied and matched against every token,
+                # so compile it through ``redos``: a crafted pattern would
+                # otherwise backtrack catastrophically on an adversarial token
+                # and hang the tagger (CWE-1333). See ``nltk/redos.py``.
+                self._regexps.append((redos.compile(regexp), tag))
+            except Exception as e:
+                raise Exception(
+                    f"Invalid RegexpTagger regexp: {e}\n- regexp: {regexp!r}\n- tag: {tag!r}"
+                ) from e
 
     def encode_json_obj(self):
         return [(regexp.pattern, tag) for regexp, tag in self._regexps], self.backoff
@@ -553,12 +559,14 @@ class RegexpTagger(SequentialBackoffTagger):
 
     def choose_tag(self, tokens, index, history):
         for regexp, tag in self._regexps:
-            if re.match(regexp, tokens[index]):
+            # ``regexp`` is a ``redos.TimedPattern``; its ``match`` applies the
+            # wall-clock timeout (a bare ``re.match(pattern, ...)`` would not).
+            if regexp.match(tokens[index]):
                 return tag
         return None
 
     def __repr__(self):
-        return "<Regexp Tagger: size={}>".format(len(self._regexps))
+        return f"<Regexp Tagger: size={len(self._regexps)}>"
 
 
 class ClassifierBasedTagger(SequentialBackoffTagger, FeaturesetTaggerI):
@@ -619,9 +627,7 @@ class ClassifierBasedTagger(SequentialBackoffTagger, FeaturesetTaggerI):
         super().__init__(backoff)
 
         if (train and classifier) or (not train and not classifier):
-            raise ValueError(
-                "Must specify either training data or " "trained classifier."
-            )
+            raise ValueError("Must specify either training data or trained classifier.")
 
         if feature_detector is not None:
             self._feature_detector = feature_detector
@@ -660,7 +666,7 @@ class ClassifierBasedTagger(SequentialBackoffTagger, FeaturesetTaggerI):
 
         classifier_corpus = []
         if verbose:
-            print("Constructing training corpus for classifier.")
+            safe_print("Constructing training corpus for classifier.")
 
         for sentence in tagged_corpus:
             history = []
@@ -671,11 +677,11 @@ class ClassifierBasedTagger(SequentialBackoffTagger, FeaturesetTaggerI):
                 history.append(tags[index])
 
         if verbose:
-            print("Training classifier ({} instances)".format(len(classifier_corpus)))
+            safe_print(f"Training classifier ({len(classifier_corpus)} instances)")
         self._classifier = classifier_builder(classifier_corpus)
 
     def __repr__(self):
-        return "<ClassifierBasedTagger: {}>".format(self._classifier)
+        return f"<ClassifierBasedTagger: {self._classifier}>"
 
     def feature_detector(self, tokens, index, history):
         """
@@ -720,15 +726,15 @@ class ClassifierBasedPOSTagger(ClassifierBasedTagger):
             prevtag = history[index - 1]
             prevprevtag = history[index - 2]
 
-        if re.match(r"[0-9]+(\.[0-9]*)?|[0-9]*\.[0-9]+$", word):
+        if redos.match(r"[0-9]+(\.[0-9]*)?|[0-9]*\.[0-9]+$", word):
             shape = "number"
-        elif re.match(r"\W+$", word):
+        elif redos.match(r"\W+$", word):
             shape = "punct"
-        elif re.match("[A-Z][a-z]+$", word):
+        elif redos.match("[A-Z][a-z]+$", word):
             shape = "upcase"
-        elif re.match("[a-z]+$", word):
+        elif redos.match("[a-z]+$", word):
             shape = "downcase"
-        elif re.match(r"\w+$", word):
+        elif redos.match(r"\w+$", word):
             shape = "mixedcase"
         else:
             shape = "other"
@@ -743,9 +749,9 @@ class ClassifierBasedPOSTagger(ClassifierBasedTagger):
             "suffix1": word.lower()[-1:],
             "prevprevword": prevprevword,
             "prevword": prevword,
-            "prevtag+word": "{}+{}".format(prevtag, word.lower()),
-            "prevprevtag+word": "{}+{}".format(prevprevtag, word.lower()),
-            "prevword+word": "{}+{}".format(prevword, word.lower()),
+            "prevtag+word": f"{prevtag}+{word.lower()}",
+            "prevprevtag+word": f"{prevprevtag}+{word.lower()}",
+            "prevword+word": f"{prevword}+{word.lower()}",
             "shape": shape,
         }
         return features

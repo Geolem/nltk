@@ -3,8 +3,8 @@
 #
 # Author: Dan Garrette <dhgarrette@gmail.com>
 #
-# Copyright (C) 2001-2021 NLTK Project
-# URL: <http://nltk.org/>
+# Copyright (C) 2001-2026 NLTK Project
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -13,35 +13,36 @@ An interface to Boxer.
 This interface relies on the latest version of the development (subversion) version of
 C&C and Boxer.
 
-Usage:
-  Set the environment variable CANDC to the bin directory of your CandC installation.
-  The models directory should be in the CandC root directory.
-  For example:
-     /path/to/candc/
-        bin/
-            candc
-            boxer
-        models/
-            boxer/
+Usage
+=====
+
+Set the environment variable CANDC to the bin directory of your CandC installation.
+The models directory should be in the CandC root directory.
+For example::
+
+    /path/to/candc/
+    bin/
+        candc
+        boxer
+    models/
+        boxer/
 """
 
-import os
-import re
 import operator
+import os
 import subprocess
-from optparse import OptionParser
 import tempfile
 from functools import reduce
+from optparse import OptionParser
 
-from nltk.internals import find_binary
-
-from nltk.sem.logic import (
-    ExpectedMoreTokensException,
-    LogicalExpressionException,
-    UnexpectedTokenException,
-    Variable,
+from nltk import pathsec, redos
+from nltk.internals import find_binary_absolute
+from nltk.pathsec import (
+    TrustError,
+    has_line_unsafe_char,
+    spawn_trusted,
+    validate_tool_data_dir,
 )
-
 from nltk.sem.drt import (
     DRS,
     DrtApplicationExpression,
@@ -53,6 +54,13 @@ from nltk.sem.drt import (
     DrtTokens,
     DrtVariableExpression,
 )
+from nltk.sem.logic import (
+    ExpectedMoreTokensException,
+    LogicalExpressionException,
+    UnexpectedTokenException,
+    Variable,
+)
+from nltk.termsec import safe_print
 
 
 class Boxer:
@@ -71,14 +79,14 @@ class Boxer:
     ):
         """
         :param boxer_drs_interpreter: A class that converts from the
-        ``AbstractBoxerDrs`` object hierarchy to a different object.  The
-        default is ``NltkDrtBoxerDrsInterpreter``, which converts to the NLTK
-        DRT hierarchy.
+            ``AbstractBoxerDrs`` object hierarchy to a different object.  The
+            default is ``NltkDrtBoxerDrsInterpreter``, which converts to the NLTK
+            DRT hierarchy.
         :param elimeq: When set to true, Boxer removes all equalities from the
-        DRSs and discourse referents standing in the equality relation are
-        unified, but only if this can be done in a meaning-preserving manner.
+            DRSs and discourse referents standing in the equality relation are
+            unified, but only if this can be done in a meaning-preserving manner.
         :param resolve: When set to true, Boxer will resolve all anaphoric DRSs and perform merge-reduction.
-        Resolution follows Van der Sandt's theory of binding and accommodation.
+            Resolution follows Van der Sandt's theory of binding and accommodation.
         """
         if boxer_drs_interpreter is None:
             boxer_drs_interpreter = NltkDrtBoxerDrsInterpreter()
@@ -106,9 +114,9 @@ class Boxer:
         :return: ``drt.DrtExpression``
         """
         discourse_ids = [discourse_id] if discourse_id is not None else None
-        d, = self.interpret_multi_sents([[input]], discourse_ids, question, verbose)
+        (d,) = self.interpret_multi_sents([[input]], discourse_ids, question, verbose)
         if not d:
-            raise Exception('Unable to interpret: "{0}"'.format(input))
+            raise Exception(f'Unable to interpret: "{input}"')
         return d
 
     def interpret_multi(self, input, discourse_id=None, question=False, verbose=False):
@@ -121,9 +129,9 @@ class Boxer:
         :return: ``drt.DrtExpression``
         """
         discourse_ids = [discourse_id] if discourse_id is not None else None
-        d, = self.interpret_multi_sents([input], discourse_ids, question, verbose)
+        (d,) = self.interpret_multi_sents([input], discourse_ids, question, verbose)
         if not d:
-            raise Exception('Unable to interpret: "{0}"'.format(input))
+            raise Exception(f'Unable to interpret: "{input}"')
         return d
 
     def interpret_sents(
@@ -178,19 +186,48 @@ class Boxer:
         :param filename: str A filename for the output file
         :return: stdout
         """
+        # candc reads a line-oriented input where <META>'id' marks a discourse
+        # boundary. A control character or quote in an id, or an input line that
+        # itself starts with <META>, would inject or misroute those boundaries.
+        for discourse_id in discourse_ids:
+            text = str(discourse_id)
+            if has_line_unsafe_char(text) or any(c in "'\"" for c in text):
+                raise ValueError(
+                    "A candc discourse id cannot contain a control character, line "
+                    f"separator or quote (it is interpolated into <META>'id'): {discourse_id!r}"
+                )
+        for discourse in inputs:
+            for line in discourse:
+                text = str(line)
+                # candc reads whole lines and its output is not tab-delimited, so a
+                # literal TAB is ordinary in-line whitespace here and stays allowed.
+                if has_line_unsafe_char(text, allow_tab=True):
+                    raise ValueError(
+                        "A candc input line cannot contain a control character or "
+                        f"line separator: {line!r}"
+                    )
+                if text.startswith("<META>"):
+                    raise ValueError(
+                        "A candc input line cannot start with the <META> discourse "
+                        f"marker: {line!r}"
+                    )
+        # candc reads the model files under --models natively: the tree gets
+        # the trust the binary gets and the checked string is what the command
+        # carries (GHSA-fg9w-wfp5-j933).
+        models = validate_tool_data_dir(
+            os.path.join(self._candc_models_path, ["boxer", "questions"][question]),
+            context="C&C models directory",
+        )
         args = [
             "--models",
-            os.path.join(self._candc_models_path, ["boxer", "questions"][question]),
+            models,
             "--candc-printer",
             "boxer",
         ]
         return self._call(
             "\n".join(
                 sum(
-                    (
-                        ["<META>'{0}'".format(id)] + d
-                        for d, id in zip(inputs, discourse_ids)
-                    ),
+                    ([f"<META>'{id}'"] + d for d, id in zip(inputs, discourse_ids)),
                     [],
                 )
             ),
@@ -206,13 +243,24 @@ class Boxer:
         :param candc_out: str output from C&C parser
         :return: stdout
         """
+        # Imported here, not at module scope: nltk.data's import graph pulls in
+        # nltk.sem, so a top level import can see a half built nltk.data module.
+        from nltk.data import make_staging_dir
+        from nltk.pathsec import open as pathsec_open
+
         f = None
+        # Stage the scratch input inside an allowed nltk.data root, never the
+        # shared system temp dir (world writable, not a pathsec root; CWE-377).
+        staging_dir = make_staging_dir(prefix="boxer-")
         try:
             fd, temp_filename = tempfile.mkstemp(
-                prefix="boxer-", suffix=".in", text=True
+                prefix="boxer-", suffix=".in", text=True, dir=staging_dir
             )
-            f = os.fdopen(fd, "w")
-            f.write(candc_out)
+            # mkstemp gives a race-free path in the validated staging dir; write
+            # through pathsec_open rather than the raw fd.
+            os.close(fd)
+            f = pathsec_open(temp_filename, "w", context="Boxer._call_boxer")
+            f.write(candc_out.decode("utf-8"))
         finally:
             if f:
                 f.close()
@@ -235,17 +283,39 @@ class Boxer:
             temp_filename,
         ]
         stdout = self._call(None, self._boxer_bin, args, verbose)
-        os.remove(temp_filename)
+        pathsec.remove_tree(
+            staging_dir, context="Boxer._call_boxer", ignore_errors=True
+        )
         return stdout
 
     def _find_binary(self, name, bin_dir, verbose=False):
-        return find_binary(
-            name,
-            path_to_bin=bin_dir,
-            env_vars=["CANDC"],
-            url="http://svn.ask.it.usyd.edu.au/trac/candc/",
-            binary_names=[name, name + ".exe"],
-            verbose=verbose,
+        # find_binary() also matches a binary relative to the current working
+        # directory: a relative bin_dir yields e.g. "./candc", and even the
+        # default bin_dir=None matches a "<name>/<name>" directory in the CWD
+        # (find_file_iter joins the name with itself). Such a result contains a
+        # path separator, so _call()'s subprocess.Popen() would execute it
+        # directly from the CWD without consulting $PATH -- an attacker who can
+        # plant a "candc"/"boxer" file there would get code execution (an
+        # untrusted search path, CWE-426/CWE-427). Skip any CWD-relative
+        # candidate and use the first absolute one (an absolute bin_dir, the
+        # CANDC environment variable, or a $PATH lookup), none of which resolve
+        # against the CWD.
+        try:
+            return find_binary_absolute(
+                name,
+                path_to_bin=bin_dir,
+                env_vars=["CANDC"],
+                url="http://svn.ask.it.usyd.edu.au/trac/candc/",
+                binary_names=[name, name + ".exe"],
+                verbose=verbose,
+            )
+        except LookupError:
+            pass
+        raise LookupError(
+            "No absolute %r binary found. Pass an absolute bin_dir to Boxer(...) "
+            "or set the CANDC environment variable to an absolute directory that "
+            "contains the candc/boxer binaries (a binary found relative to the "
+            "current working directory is refused)." % name
         )
 
     def _call(self, input_str, binary, args=[], verbose=False):
@@ -258,31 +328,45 @@ class Boxer:
         :return: stdout
         """
         if verbose:
-            print("Calling:", binary)
-            print("Args:", args)
-            print("Input:", input_str)
-            print("Command:", binary + " " + " ".join(args))
+            safe_print("Calling:", binary)
+            safe_print("Args:", args)
+            safe_print("Input:", input_str)
+            safe_print("Command:", binary + " " + " ".join(args))
 
-        # Call via a subprocess
-        if input_str is None:
-            cmd = [binary] + args
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        else:
-            cmd = 'echo "{0}" | {1} {2}'.format(input_str, binary, " ".join(args))
-            p = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
-            )
-        stdout, stderr = p.communicate()
+        # Route through the trusted-exec chokepoint: verify the candc/boxer binary
+        # is on a path no other local user can swap, refuse a shell, and scrub the
+        # loader environment before exec (CWE-426/427/732).
+        cmd = [binary] + args
+        try:
+            if input_str is None:
+                p = spawn_trusted(
+                    cmd[0], cmd[1:], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                stdout, stderr = p.communicate()
+            else:
+                p = spawn_trusted(
+                    cmd[0],
+                    cmd[1:],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                stdout, stderr = p.communicate(input=input_str.encode("utf-8"))
+        except TrustError as e:
+            raise LookupError(
+                f"Refusing to run {cmd[0]!r}: it is not on a trusted path. Install "
+                f"Boxer/C&C where only you (or root) can write ({e})."
+            ) from e
 
         if verbose:
-            print("Return code:", p.returncode)
+            safe_print("Return code:", p.returncode)
             if stdout:
-                print("stdout:\n", stdout, "\n")
+                safe_print("stdout:\n", stdout, "\n")
             if stderr:
-                print("stderr:\n", stderr, "\n")
+                safe_print("stderr:\n", stderr, "\n")
         if p.returncode != 0:
             raise Exception(
-                "ERROR CALLING: {0} {1}\nReturncode: {2}\n{3}".format(
+                "ERROR CALLING: {} {}\nReturncode: {}\n{}".format(
                     binary, " ".join(args), p.returncode, stderr
                 )
             )
@@ -290,7 +374,7 @@ class Boxer:
         return stdout
 
     def _parse_to_drs_dict(self, boxer_out, use_disc_id):
-        lines = boxer_out.split("\n")
+        lines = boxer_out.decode("utf-8").split("\n")
         drs_dict = {}
         i = 0
         while i < len(lines):
@@ -303,12 +387,12 @@ class Boxer:
                 drs_id = line[comma_idx + 1 : line.index(")")]
                 i += 1
                 line = lines[i]
-                assert line.startswith("sem({0},".format(drs_id))
+                assert line.startswith(f"sem({drs_id},")
                 if line[-4:] == "').'":
                     line = line[:-4] + ")."
-                assert line.endswith(")."), "can't parse line: {0}".format(line)
+                assert line.endswith(")."), f"can't parse line: {line}"
 
-                search_start = len("sem({0},[".format(drs_id))
+                search_start = len(f"sem({drs_id},[")
                 brace_count = 1
                 drs_start = -1
                 for j, c in enumerate(line[search_start:]):
@@ -417,10 +501,10 @@ class BoxerOutputDrsParser(DrtParser):
             conds = []
 
         return sum(
-            [
+            (
                 [cond(sent_index, word_indices) for cond in conds]
                 for sent_index, word_indices in self._sent_and_word_indices(indices)
-            ],
+            ),
             [],
         )
 
@@ -532,16 +616,20 @@ class BoxerOutputDrsParser(DrtParser):
         else:
             return None
         self.assertToken(self.token(), ")")
+
+        def func_gen(x):
+            return lambda sent_index, word_indices: x
+
         return [
             lambda sent_index, word_indices: BoxerPred(
                 self.discourse_id, sent_index, word_indices, arg, tok, "n", 0
             )
-        ] + [lambda sent_index, word_indices: cond for cond in conds]
+        ] + [func_gen(cond) for cond in conds]
 
     def _handle_date(self, arg):
         # []: (+), []:'XXXX', [1004]:'04', []:'XX'
         conds = []
-        (sent_index, word_indices), = self._sent_and_word_indices(
+        ((sent_index, word_indices),) = self._sent_and_word_indices(
             self._parse_index_list()
         )
         self.assertToken(self.token(), "(")
@@ -553,14 +641,14 @@ class BoxerOutputDrsParser(DrtParser):
                 sent_index,
                 word_indices,
                 arg,
-                "date_pol_{0}".format(pol),
+                f"date_pol_{pol}",
                 "a",
                 0,
             )
         )
         self.assertToken(self.token(), ",")
 
-        (sent_index, word_indices), = self._sent_and_word_indices(
+        ((sent_index, word_indices),) = self._sent_and_word_indices(
             self._parse_index_list()
         )
         year = self.token()
@@ -572,14 +660,14 @@ class BoxerOutputDrsParser(DrtParser):
                     sent_index,
                     word_indices,
                     arg,
-                    "date_year_{0}".format(year),
+                    f"date_year_{year}",
                     "a",
                     0,
                 )
             )
         self.assertToken(self.token(), ",")
 
-        (sent_index, word_indices), = self._sent_and_word_indices(
+        ((sent_index, word_indices),) = self._sent_and_word_indices(
             self._parse_index_list()
         )
         month = self.token()
@@ -590,14 +678,14 @@ class BoxerOutputDrsParser(DrtParser):
                     sent_index,
                     word_indices,
                     arg,
-                    "date_month_{0}".format(month),
+                    f"date_month_{month}",
                     "a",
                     0,
                 )
             )
         self.assertToken(self.token(), ",")
 
-        (sent_index, word_indices), = self._sent_and_word_indices(
+        ((sent_index, word_indices),) = self._sent_and_word_indices(
             self._parse_index_list()
         )
         day = self.token()
@@ -608,7 +696,7 @@ class BoxerOutputDrsParser(DrtParser):
                     sent_index,
                     word_indices,
                     arg,
-                    "date_day_{0}".format(day),
+                    f"date_day_{day}",
                     "a",
                     0,
                 )
@@ -773,7 +861,7 @@ class BoxerOutputDrsParser(DrtParser):
 
     def parse_variable(self):
         var = self.token()
-        assert re.match(r"^[exps]\d+$", var), var
+        assert redos.match(r"^[exps]\d+$", var), var
         return var
 
     def parse_index(self):
@@ -783,7 +871,7 @@ class BoxerOutputDrsParser(DrtParser):
         """
         :return: list of (sent_index, word_indices) tuples
         """
-        sent_indices = set((i / 1000) - 1 for i in indices if i >= 0)
+        sent_indices = {(i / 1000) - 1 for i in indices if i >= 0}
         if sent_indices:
             pairs = []
             for sent_index in sent_indices:
@@ -1030,7 +1118,7 @@ class AbstractBoxerDrs:
         return self
 
     def __hash__(self):
-        return hash("{0}".format(self))
+        return hash(f"{self}")
 
 
 class BoxerDrs(AbstractBoxerDrs):
@@ -1067,12 +1155,12 @@ class BoxerDrs(AbstractBoxerDrs):
         )
 
     def __repr__(self):
-        s = "drs([%s], [%s])" % (
+        s = "drs([{}], [{}])".format(
             ", ".join("%s" % r for r in self.refs),
             ", ".join("%s" % c for c in self.conds),
         )
         if self.consequent is not None:
-            s = "imp(%s, %s)" % (s, self.consequent)
+            s = f"imp({s}, {self.consequent})"
         return s
 
     def __eq__(self, other):
@@ -1129,7 +1217,7 @@ class BoxerIndexed(AbstractBoxerDrs):
         self.word_indices = word_indices
 
     def atoms(self):
-        return set([self])
+        return {self}
 
     def __eq__(self, other):
         return (
@@ -1146,7 +1234,7 @@ class BoxerIndexed(AbstractBoxerDrs):
     __hash__ = AbstractBoxerDrs.__hash__
 
     def __repr__(self):
-        s = "%s(%s, %s, [%s]" % (
+        s = "{}({}, {}, [{}]".format(
             self._pred(),
             self.discourse_id,
             self.sent_index,
@@ -1166,7 +1254,7 @@ class BoxerPred(BoxerIndexed):
         self.sense = sense
 
     def _variables(self):
-        return (set([self.var]), set(), set())
+        return ({self.var}, set(), set())
 
     def change_var(self, var):
         return BoxerPred(
@@ -1218,7 +1306,7 @@ class BoxerNamed(BoxerIndexed):
         self.sense = sense
 
     def _variables(self):
-        return (set([self.var]), set(), set())
+        return ({self.var}, set(), set())
 
     def change_var(self, var):
         return BoxerNamed(
@@ -1269,7 +1357,7 @@ class BoxerRel(BoxerIndexed):
         self.sense = sense
 
     def _variables(self):
-        return (set([self.var1, self.var2]), set(), set())
+        return ({self.var1, self.var2}, set(), set())
 
     def clean(self):
         return BoxerRel(
@@ -1308,11 +1396,11 @@ class BoxerProp(BoxerIndexed):
 
     def _variables(self):
         return tuple(
-            map(operator.or_, (set(), set(), set([self.var])), self.drs._variables())
+            map(operator.or_, (set(), set(), {self.var}), self.drs._variables())
         )
 
     def referenced_labels(self):
-        return set([self.drs])
+        return {self.drs}
 
     def atoms(self):
         return self.drs.atoms()
@@ -1349,7 +1437,7 @@ class BoxerEq(BoxerIndexed):
         self.var2 = var2
 
     def _variables(self):
-        return (set([self.var1, self.var2]), set(), set())
+        return ({self.var1, self.var2}, set(), set())
 
     def atoms(self):
         return set()
@@ -1378,7 +1466,7 @@ class BoxerCard(BoxerIndexed):
         self.type = type
 
     def _variables(self):
-        return (set([self.var]), set(), set())
+        return ({self.var}, set(), set())
 
     def renumber_sentences(self, f):
         return BoxerCard(
@@ -1448,7 +1536,7 @@ class BoxerWhq(BoxerIndexed):
         return tuple(
             map(
                 operator.or_,
-                (set([self.variable]), set(), set()),
+                ({self.variable}, set(), set()),
                 self.drs1._variables(),
                 self.drs2._variables(),
             )
@@ -1512,10 +1600,10 @@ class NltkDrtBoxerDrsInterpreter:
         elif isinstance(ex, BoxerNot):
             return DrtNegatedExpression(self.interpret(ex.drs))
         elif isinstance(ex, BoxerPred):
-            pred = self._add_occur_indexing("%s_%s" % (ex.pos, ex.name), ex)
+            pred = self._add_occur_indexing(f"{ex.pos}_{ex.name}", ex)
             return self._make_atom(pred, ex.var)
         elif isinstance(ex, BoxerNamed):
-            pred = self._add_occur_indexing("ne_%s_%s" % (ex.type, ex.name), ex)
+            pred = self._add_occur_indexing(f"ne_{ex.type}_{ex.name}", ex)
             return self._make_atom(pred, ex.var)
         elif isinstance(ex, BoxerRel):
             pred = self._add_occur_indexing("%s" % (ex.rel), ex)
@@ -1528,7 +1616,7 @@ class NltkDrtBoxerDrsInterpreter:
                 DrtVariableExpression(Variable(ex.var2)),
             )
         elif isinstance(ex, BoxerCard):
-            pred = self._add_occur_indexing("card_%s_%s" % (ex.type, ex.value), ex)
+            pred = self._add_occur_indexing(f"card_{ex.type}_{ex.value}", ex)
             return self._make_atom(pred, ex.var)
         elif isinstance(ex, BoxerOr):
             return DrtOrExpression(self.interpret(ex.drs1), self.interpret(ex.drs2))
@@ -1536,7 +1624,7 @@ class NltkDrtBoxerDrsInterpreter:
             drs1 = self.interpret(ex.drs1)
             drs2 = self.interpret(ex.drs2)
             return DRS(drs1.refs + drs2.refs, drs1.conds + drs2.conds)
-        assert False, "%s: %s" % (ex.__class__.__name__, ex)
+        assert False, f"{ex.__class__.__name__}: {ex}"
 
     def _make_atom(self, pred, *args):
         accum = DrtVariableExpression(Variable(pred))
@@ -1598,10 +1686,10 @@ if __name__ == "__main__":
         args[0].split(r"\n"), question=options.question, verbose=options.verbose
     )
     if drs is None:
-        print(None)
+        safe_print(None)
     else:
         drs = drs.simplify().eliminate_equality()
         if options.fol:
-            print(drs.fol().normalize())
+            safe_print(drs.fol().normalize())
         else:
             drs.pretty_print()

@@ -1,8 +1,8 @@
 # Natural Language Toolkit: Naive Bayes Classifiers
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -32,8 +32,9 @@ sum to one:
 
 from collections import defaultdict
 
-from nltk.probability import FreqDist, DictionaryProbDist, ELEProbDist, sum_logs
 from nltk.classify.api import ClassifierI
+from nltk.probability import DictionaryProbDist, ELEProbDist, FreqDist, sum_logs
+from nltk.termsec import safe_print
 
 ##//////////////////////////////////////////////////////
 ##  Naive Bayes Classifier
@@ -43,7 +44,7 @@ from nltk.classify.api import ClassifierI
 class NaiveBayesClassifier(ClassifierI):
     """
     A Naive Bayes classifier.  Naive Bayes classifiers are
-    paramaterized by two probability distributions:
+    parameterized by two probability distributions:
 
       - P(label) gives the probability that an input will receive each
         label, given no information about the input's features.
@@ -101,7 +102,7 @@ class NaiveBayesClassifier(ClassifierI):
                 # print('Ignoring unseen feature %s' % fname)
                 del featureset[fname]
 
-        # Find the log probabilty of each label, given the features.
+        # Find the log probability of each label, given the features.
         # Start with the log probability of the label itself.
         logprob = {}
         for label in self._labels:
@@ -109,7 +110,7 @@ class NaiveBayesClassifier(ClassifierI):
 
         # Then add in the log probability of features given labels.
         for label in self._labels:
-            for (fname, fval) in featureset.items():
+            for fname, fval in featureset.items():
                 if (label, fname) in self._feature_probdist:
                     feature_probs = self._feature_probdist[label, fname]
                     logprob[label] += feature_probs.logprob(fval)
@@ -124,17 +125,17 @@ class NaiveBayesClassifier(ClassifierI):
     def show_most_informative_features(self, n=10):
         # Determine the most relevant features, and display them.
         cpdist = self._feature_probdist
-        print("Most Informative Features")
+        safe_print("Most Informative Features")
 
-        for (fname, fval) in self.most_informative_features(n):
+        for fname, fval in self.most_informative_features(n):
 
             def labelprob(l):
                 return cpdist[l, fname].prob(fval)
 
             labels = sorted(
-                [l for l in self._labels if fval in cpdist[l, fname].samples()],
+                (l for l in self._labels if fval in cpdist[l, fname].samples()),
                 key=lambda element: (-labelprob(element), element),
-                reverse=True
+                reverse=True,
             )
             if len(labels) == 1:
                 continue
@@ -146,7 +147,7 @@ class NaiveBayesClassifier(ClassifierI):
                 ratio = "%8.1f" % (
                     cpdist[l1, fname].prob(fval) / cpdist[l0, fname].prob(fval)
                 )
-            print(
+            safe_print(
                 "%24s = %-14r %6s : %-6s = %s : 1.0"
                 % (fname, fval, ("%s" % l1)[:6], ("%s" % l0)[:6], ratio)
             )
@@ -168,7 +169,7 @@ class NaiveBayesClassifier(ClassifierI):
             features = set()
             # The max & min probability associated w/ each (fname, fval)
             # pair.  Maps (fname,fval) -> float.
-            maxprob = defaultdict(lambda: 0.0)
+            maxprob = defaultdict(float)
             minprob = defaultdict(lambda: 1.0)
 
             for (label, fname), probdist in self._feature_probdist.items():
@@ -184,8 +185,13 @@ class NaiveBayesClassifier(ClassifierI):
             # Convert features to a list, & sort it by how informative
             # features are.
             self._most_informative_features = sorted(
-                features, key=lambda feature_: (minprob[feature_] / maxprob[feature_], feature_[0],
-                                                feature_[1] in [None, False, True], str(feature_[1]).lower())
+                features,
+                key=lambda feature_: (
+                    minprob[feature_] / maxprob[feature_],
+                    feature_[0],
+                    feature_[1] in [None, False, True],
+                    str(feature_[1]).lower(),
+                ),
             )
         return self._most_informative_features[:n]
 
@@ -232,7 +238,7 @@ class NaiveBayesClassifier(ClassifierI):
 
         # Create the P(fval|label, fname) distribution
         feature_probdist = {}
-        for ((label, fname), freqdist) in feature_freqdist.items():
+        for (label, fname), freqdist in feature_freqdist.items():
             probdist = estimator(freqdist, bins=len(feature_values[fname]))
             feature_probdist[label, fname] = probdist
 

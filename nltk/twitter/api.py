@@ -1,9 +1,9 @@
 # Natural Language Toolkit: Twitter API
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Ewan Klein <ewan@inf.ed.ac.uk>
 #         Lorenzo Rubio <lrnzcig@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -13,7 +13,9 @@ handling.
 
 import time as _time
 from abc import ABCMeta, abstractmethod
-from datetime import tzinfo, timedelta, timezone, datetime
+from datetime import datetime, timedelta, timezone, tzinfo
+
+from nltk.termsec import safe_print
 
 
 class LocalTimezoneOffsetWithUTC(tzinfo):
@@ -137,8 +139,8 @@ class TweetHandlerI(BasicTweetHandler):
                     message = "later"
                     date_limit = self.lower_date_limit
                 if verbose:
-                    print(
-                        "Date limit {0} is {1} than date of current tweet {2}".format(
+                    safe_print(
+                        "Date limit {} is {} than date of current tweet {}".format(
                             date_limit, message, tweet_date
                         )
                     )

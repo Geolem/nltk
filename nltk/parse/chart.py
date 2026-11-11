@@ -1,11 +1,11 @@
 # Natural Language Toolkit: A Chart Parser
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
 #         Steven Bird <stevenbird1@gmail.com>
 #         Jean Mark Gawron <gawron@mail.sdsu.edu>
 #         Peter Ljunglöf <peter.ljunglof@heatherleaf.se>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -36,17 +36,25 @@ defines three chart parsers:
 """
 
 import itertools
-import re
+import time
 import warnings
 from functools import total_ordering
 
-from nltk.tree import Tree
+from nltk import redos
 from nltk.grammar import PCFG, is_nonterminal, is_terminal
-from nltk.util import OrderedDict
 from nltk.internals import raise_unorderable_types
-
 from nltk.parse.api import ParserI
+from nltk.termsec import safe_print
+from nltk.tree import Tree
+from nltk.util import OrderedDict
 
+#: Default wall-clock limit, in seconds, for a single ``chart_parse``. Bottom-up
+#: recognition over a FEATURE grammar whose features accumulate with structure
+#: is super-polynomial (~O(n**4)) with no natural bound, so an accumulating FCFG
+#: plus ~50-100 tokens pins a core (CWE-407). Plain CFG recognition is polynomial
+#: and unaffected; the bound is harmless defense-in-depth there. ``max_time=None``
+#: disables it.
+DEFAULT_MAX_TIME = 5.0
 
 ########################################################################
 ##  Edges
@@ -344,7 +352,7 @@ class TreeEdge(EdgeI):
 
     # String representation
     def __str__(self):
-        str = "[%s:%s] " % (self._span[0], self._span[1])
+        str = f"[{self._span[0]}:{self._span[1]}] "
         str += "%-2r ->" % (self._lhs,)
 
         for i in range(len(self._rhs)):
@@ -418,7 +426,7 @@ class LeafEdge(EdgeI):
 
     # String representations
     def __str__(self):
-        return "[%s:%s] %s" % (self._index, self._index + 1, repr(self._leaf))
+        return f"[{self._index}:{self._index + 1}] {repr(self._leaf)}"
 
     def __repr__(self):
         return "[Edge: %s]" % (self)
@@ -427,6 +435,43 @@ class LeafEdge(EdgeI):
 ########################################################################
 ##  Chart
 ########################################################################
+
+#: Upper bound on the number of parse-tree nodes a single tree extraction
+#: (:meth:`Chart.trees`) may build. A highly-ambiguous grammar (e.g. the
+#: 15-byte ``S -> S S | 'a'``) makes the number of parses exponential in the
+#: sentence length (the Catalan numbers), and the trees are materialised eagerly
+#: -- so a tiny grammar plus a short sentence pins the CPU and exhausts memory,
+#: and even obtaining the first parse does not return (CWE-770; CVE-2026-12886).
+#: Once this many tree nodes have been built, extraction raises ``ValueError``
+#: instead of running unbounded. Raise it if you legitimately need to enumerate
+#: a more ambiguous parse forest.
+MAX_PARSE_TREES = 1_000_000
+
+
+class _ParseTreeBudget:
+    """Counts constructed parse-tree nodes and aborts runaway tree extraction.
+
+    One budget is shared across a whole :meth:`Chart.trees` call (including the
+    recursive subtree builds and the memoised reuse), so it bounds the total
+    work of reading an exponential parse forest off the chart.
+    """
+
+    __slots__ = ("remaining", "limit")
+
+    def __init__(self, limit):
+        self.remaining = limit
+        self.limit = limit
+
+    def spend(self):
+        self.remaining -= 1
+        if self.remaining < 0:
+            raise ValueError(
+                "Refusing to extract parse trees: a highly-ambiguous grammar can "
+                "yield an exponential number of parses, and tree extraction "
+                "exceeded the limit of %d parse-tree nodes (CWE-770). Parse with "
+                "a less ambiguous grammar or a shorter sentence, or raise "
+                "nltk.parse.chart.MAX_PARSE_TREES." % self.limit
+            )
 
 
 class Chart:
@@ -614,7 +659,7 @@ class Chart:
         A helper function for ``insert``, which registers the new
         edge with all existing indexes.
         """
-        for (restr_keys, index) in self._indexes.items():
+        for restr_keys, index in self._indexes.items():
             vals = tuple(getattr(edge, key)() for key in restr_keys)
             index.setdefault(vals, []).append(edge)
 
@@ -676,8 +721,7 @@ class Chart:
         the entire chart, and whose root node is ``root``.
         """
         for edge in self.select(start=0, end=self._num_leaves, lhs=root):
-            for tree in self.trees(edge, tree_class=tree_class, complete=True):
-                yield tree
+            yield from self.trees(edge, tree_class=tree_class, complete=True)
 
     def trees(self, edge, tree_class=Tree, complete=False):
         """
@@ -693,17 +737,28 @@ class Chart:
             Tree may be used to encode that subtree in
             both trees.  If you need to eliminate this subtree
             sharing, then create a deep copy of each tree.
+        :raise ValueError: if more than ``MAX_PARSE_TREES`` parse-tree nodes
+            would be built, which a highly-ambiguous grammar reaches at an
+            exponential rate (CWE-770).
         """
-        return iter(self._trees(edge, complete, memo={}, tree_class=tree_class))
+        budget = _ParseTreeBudget(MAX_PARSE_TREES)
+        return iter(
+            self._trees(edge, complete, memo={}, tree_class=tree_class, budget=budget)
+        )
 
-    def _trees(self, edge, complete, memo, tree_class):
+    def _trees(self, edge, complete, memo, tree_class, budget=None):
         """
         A helper function for ``trees``.
 
         :param memo: A dictionary used to record the trees that we've
             generated for each edge, so that when we see an edge more
             than once, we can reuse the same trees.
+        :param budget: A shared :class:`_ParseTreeBudget` that bounds the total
+            number of parse-tree nodes built, so an exponential parse forest
+            cannot exhaust time/memory (CWE-770).
         """
+        if budget is None:
+            budget = _ParseTreeBudget(MAX_PARSE_TREES)
         # If we've seen this edge before, then reuse our old answer.
         if edge in memo:
             return memo[edge]
@@ -732,15 +787,26 @@ class Chart:
             # Get the set of child choices for each child pointer.
             # child_choices[i] is the set of choices for the tree's
             # ith child.
-            child_choices = [self._trees(cp, complete, memo, tree_class) for cp in cpl]
+            child_choices = [
+                self._trees(cp, complete, memo, tree_class, budget) for cp in cpl
+            ]
 
             # For each combination of children, add a tree.
             for children in itertools.product(*child_choices):
+                # Count every node built; a highly-ambiguous grammar would
+                # otherwise materialise an exponential number of them (CWE-770).
+                budget.spend()
                 trees.append(tree_class(lhs, children))
 
         # If the edge is incomplete, then extend it with "partial trees":
         if edge.is_incomplete():
-            unexpanded = [tree_class(elt, []) for elt in edge.rhs()[edge.dot() :]]
+            unexpanded = []
+            for elt in edge.rhs()[edge.dot() :]:
+                # Count these childless nodes too, so MAX_PARSE_TREES is an
+                # accurate bound on constructed tree nodes when trees() is used
+                # on incomplete edges (complete=False).
+                budget.spend()
+                unexpanded.append(tree_class(elt, []))
             for tree in trees:
                 tree.extend(unexpanded)
 
@@ -829,7 +895,7 @@ class Chart:
             width = 50 // (self.num_leaves() + 1)
         # sort edges: primary key=length, secondary key=start index.
         # (and filter out the token edges)
-        edges = sorted([(e.length(), e.start(), e) for e in self])
+        edges = sorted((e.length(), e.start(), e) for e in self)
         edges = [e for (_, _, e) in edges]
 
         return (
@@ -968,7 +1034,7 @@ class AbstractChartRule(ChartRuleI):
 
     - A default implementation for ``apply``.
     - A default implementation for ``apply_everywhere``,
-      (Currently, this implementation assumes that ``NUM_EDGES``<=3.)
+      (Currently, this implementation assumes that ``NUM_EDGES <= 3``.)
     - A default implementation for ``__str__``, which returns a
       name based on the rule's class name.
     """
@@ -981,26 +1047,22 @@ class AbstractChartRule(ChartRuleI):
     # self.apply() for each set of edges.
     def apply_everywhere(self, chart, grammar):
         if self.NUM_EDGES == 0:
-            for new_edge in self.apply(chart, grammar):
-                yield new_edge
+            yield from self.apply(chart, grammar)
 
         elif self.NUM_EDGES == 1:
             for e1 in chart:
-                for new_edge in self.apply(chart, grammar, e1):
-                    yield new_edge
+                yield from self.apply(chart, grammar, e1)
 
         elif self.NUM_EDGES == 2:
             for e1 in chart:
                 for e2 in chart:
-                    for new_edge in self.apply(chart, grammar, e1, e2):
-                        yield new_edge
+                    yield from self.apply(chart, grammar, e1, e2)
 
         elif self.NUM_EDGES == 3:
             for e1 in chart:
                 for e2 in chart:
                     for e3 in chart:
-                        for new_edge in self.apply(chart, grammar, e1, e2, e3):
-                            yield new_edge
+                        yield from self.apply(chart, grammar, e1, e2, e3)
 
         else:
             raise AssertionError("NUM_EDGES>3 is not currently supported")
@@ -1008,7 +1070,7 @@ class AbstractChartRule(ChartRuleI):
     # Default: return a name based on the class name.
     def __str__(self):
         # Add spaces between InitialCapsWords.
-        return re.sub("([a-z])([A-Z])", r"\1 \2", self.__class__.__name__)
+        return redos.sub("([a-z])([A-Z])", r"\1 \2", self.__class__.__name__)
 
 
 # ////////////////////////////////////////////////////////////
@@ -1072,11 +1134,9 @@ class SingleEdgeFundamentalRule(FundamentalRule):
 
     def apply(self, chart, grammar, edge):
         if edge.is_incomplete():
-            for new_edge in self._apply_incomplete(chart, grammar, edge):
-                yield new_edge
+            yield from self._apply_incomplete(chart, grammar, edge)
         else:
-            for new_edge in self._apply_complete(chart, grammar, edge):
-                yield new_edge
+            yield from self._apply_complete(chart, grammar, edge)
 
     def _apply_complete(self, chart, grammar, right_edge):
         for left_edge in chart.select(
@@ -1367,6 +1427,7 @@ class ChartParser(ParserI):
         trace_chart_width=50,
         use_agenda=True,
         chart_class=Chart,
+        max_time=DEFAULT_MAX_TIME,
     ):
         """
         Create a new chart parser, that uses ``grammar`` to parse
@@ -1391,11 +1452,18 @@ class ChartParser(ParserI):
             if possible.
         :param chart_class: The class that should be used to create
             the parse charts.
+        :type max_time: float or None
+        :param max_time: Wall-clock limit, in seconds, for a single
+            ``chart_parse``.  A crafted feature grammar can make bottom-up
+            recognition super-polynomial (CWE-407); when the limit is exceeded
+            ``chart_parse`` raises ``TimeoutError``.  Defaults to
+            ``DEFAULT_MAX_TIME``; ``None`` disables the bound.
         """
         self._grammar = grammar
         self._strategy = strategy
         self._trace = trace
         self._trace_chart_width = trace_chart_width
+        self._max_time = max_time
         # If the strategy only consists of axioms (NUM_EDGES==0) and
         # inference rules (NUM_EDGES==1), we can use an agenda-based algorithm:
         self._use_agenda = use_agenda
@@ -1420,9 +1488,9 @@ class ChartParser(ParserI):
         print_rule_header = trace > 1
         for edge in new_edges:
             if print_rule_header:
-                print("%s:" % rule)
+                safe_print("%s:" % rule)
                 print_rule_header = False
-            print(chart.pretty_format_edge(edge, edge_width))
+            safe_print(chart.pretty_format_edge(edge, edge_width))
 
     def chart_parse(self, tokens, trace=None):
         """
@@ -1445,7 +1513,22 @@ class ChartParser(ParserI):
         # Width, for printing trace edges.
         trace_edge_width = self._trace_chart_width // (chart.num_leaves() + 1)
         if trace:
-            print(chart.pretty_format_leaves(trace_edge_width))
+            safe_print(chart.pretty_format_leaves(trace_edge_width))
+
+        # Bottom-up recognition over an accumulating feature grammar is
+        # super-polynomial with no natural bound (CWE-407); a wall-clock deadline
+        # inside the recognition loops caps it. ``max_time=None`` disables it.
+        deadline = (
+            None if self._max_time is None else time.perf_counter() + self._max_time
+        )
+
+        def _check_deadline():
+            if deadline is not None and time.perf_counter() > deadline:
+                raise TimeoutError(
+                    f"ChartParser exceeded its {self._max_time}s time limit; the "
+                    "grammar may be too ambiguous for this many tokens. Pass "
+                    "max_time=None to disable the limit."
+                )
 
         if self._use_agenda:
             # Use an agenda-based algorithm.
@@ -1459,6 +1542,7 @@ class ChartParser(ParserI):
             # but chart.edges() functions as a queue.
             agenda.reverse()
             while agenda:
+                _check_deadline()
                 edge = agenda.pop()
                 for rule in inference_rules:
                     new_edges = list(rule.apply(chart, grammar, edge))
@@ -1470,6 +1554,7 @@ class ChartParser(ParserI):
             # Do not use an agenda-based algorithm.
             edges_added = True
             while edges_added:
+                _check_deadline()
                 edges_added = False
                 for rule in self._strategy:
                     new_edges = list(rule.apply_everywhere(chart, grammar))
@@ -1525,7 +1610,7 @@ class LeftCornerChartParser(ChartParser):
     def __init__(self, grammar, **parser_args):
         if not grammar.is_nonempty():
             raise ValueError(
-                "LeftCornerParser only works for grammars " "without empty productions."
+                "LeftCornerParser only works for grammars without empty productions."
             )
         ChartParser.__init__(self, grammar, LC_STRATEGY, **parser_args)
 
@@ -1595,9 +1680,9 @@ class SteppingChartParser(ChartParser):
 
             for e in self._parse():
                 if self._trace > 1:
-                    print(self._current_chartrule)
+                    safe_print(self._current_chartrule)
                 if self._trace > 0:
-                    print(self._chart.pretty_format_edge(e, w))
+                    safe_print(self._chart.pretty_format_edge(e, w))
                 yield e
                 if self._restart:
                     break
@@ -1741,38 +1826,40 @@ def demo(
     """
     A demonstration of the chart parsers.
     """
-    import sys, time
-    from nltk import nonterminals, Production, CFG
+    import sys
+    import time
+
+    from nltk import CFG, Production, nonterminals
 
     # The grammar for ChartParser and SteppingChartParser:
     grammar = demo_grammar()
     if print_grammar:
-        print("* Grammar")
-        print(grammar)
+        safe_print("* Grammar")
+        safe_print(grammar)
 
     # Tokenize the sample sentence.
-    print("* Sentence:")
-    print(sent)
+    safe_print("* Sentence:")
+    safe_print(sent)
     tokens = sent.split()
-    print(tokens)
-    print()
+    safe_print(tokens)
+    safe_print()
 
     # Ask the user which parser to test,
     # if the parser wasn't provided as an argument
     if choice is None:
-        print("  1: Top-down chart parser")
-        print("  2: Bottom-up chart parser")
-        print("  3: Bottom-up left-corner chart parser")
-        print("  4: Left-corner chart parser with bottom-up filter")
-        print("  5: Stepping chart parser (alternating top-down & bottom-up)")
-        print("  6: All parsers")
-        print("\nWhich parser (1-6)? ", end=" ")
+        safe_print("  1: Top-down chart parser")
+        safe_print("  2: Bottom-up chart parser")
+        safe_print("  3: Bottom-up left-corner chart parser")
+        safe_print("  4: Left-corner chart parser with bottom-up filter")
+        safe_print("  5: Stepping chart parser (alternating top-down & bottom-up)")
+        safe_print("  6: All parsers")
+        safe_print("\nWhich parser (1-6)? ", end=" ")
         choice = sys.stdin.readline().strip()
-        print()
+        safe_print()
 
     choice = str(choice)
     if choice not in "123456":
-        print("Bad parser number")
+        safe_print("Bad parser number")
         return
 
     # Keep track of how long each parser takes.
@@ -1792,63 +1879,63 @@ def demo(
 
     # Run the requested chart parser(s), except the stepping parser.
     for strategy in choices:
-        print("* Strategy: " + strategies[strategy][0])
-        print()
+        safe_print("* Strategy: " + strategies[strategy][0])
+        safe_print()
         cp = ChartParser(grammar, strategies[strategy][1], trace=trace)
         t = time.time()
         chart = cp.chart_parse(tokens)
         parses = list(chart.parses(grammar.start()))
 
         times[strategies[strategy][0]] = time.time() - t
-        print("Nr edges in chart:", len(chart.edges()))
+        safe_print("Nr edges in chart:", len(chart.edges()))
         if numparses:
             assert len(parses) == numparses, "Not all parses found"
         if print_trees:
             for tree in parses:
-                print(tree)
+                safe_print(tree)
         else:
-            print("Nr trees:", len(parses))
-        print()
+            safe_print("Nr trees:", len(parses))
+        safe_print()
 
     # Run the stepping parser, if requested.
     if choice in "56":
-        print("* Strategy: Stepping (top-down vs bottom-up)")
-        print()
+        safe_print("* Strategy: Stepping (top-down vs bottom-up)")
+        safe_print()
         t = time.time()
         cp = SteppingChartParser(grammar, trace=trace)
         cp.initialize(tokens)
         for i in range(5):
-            print("*** SWITCH TO TOP DOWN")
+            safe_print("*** SWITCH TO TOP DOWN")
             cp.set_strategy(TD_STRATEGY)
             for j, e in enumerate(cp.step()):
                 if j > 20 or e is None:
                     break
-            print("*** SWITCH TO BOTTOM UP")
+            safe_print("*** SWITCH TO BOTTOM UP")
             cp.set_strategy(BU_STRATEGY)
             for j, e in enumerate(cp.step()):
                 if j > 20 or e is None:
                     break
         times["Stepping"] = time.time() - t
-        print("Nr edges in chart:", len(cp.chart().edges()))
+        safe_print("Nr edges in chart:", len(cp.chart().edges()))
         if numparses:
             assert len(list(cp.parses())) == numparses, "Not all parses found"
         if print_trees:
             for tree in cp.parses():
-                print(tree)
+                safe_print(tree)
         else:
-            print("Nr trees:", len(list(cp.parses())))
-        print()
+            safe_print("Nr trees:", len(list(cp.parses())))
+        safe_print()
 
     # Print the times of all parsers:
     if not (print_times and times):
         return
-    print("* Parsing times")
-    print()
+    safe_print("* Parsing times")
+    safe_print()
     maxlen = max(len(key) for key in times)
     format = "%" + repr(maxlen) + "s parser: %6.3fsec"
     times_items = times.items()
-    for (parser, t) in sorted(times_items, key=lambda a: a[1]):
-        print(format % (parser, t))
+    for parser, t in sorted(times_items, key=lambda a: a[1]):
+        safe_print(format % (parser, t))
 
 
 if __name__ == "__main__":

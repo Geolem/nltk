@@ -1,10 +1,10 @@
 # Natural Language Toolkit: Tagged Corpus Reader
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
 #         Steven Bird <stevenbird1@gmail.com>
 #         Jacob Perkins <japerk@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -13,12 +13,11 @@ A reader for corpora whose documents contain part-of-speech-tagged words.
 
 import os
 
-from nltk.tag import str2tuple, map_tag
-from nltk.tokenize import *
-
 from nltk.corpus.reader.api import *
-from nltk.corpus.reader.util import *
 from nltk.corpus.reader.timit import read_timit_block
+from nltk.corpus.reader.util import *
+from nltk.tag import map_tag, str2tuple
+from nltk.tokenize import *
 
 
 class TaggedCorpusReader(CorpusReader):

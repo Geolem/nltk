@@ -1,8 +1,8 @@
 # Natural Language Toolkit: RTE Corpus Reader
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author:  Ewan Klein <ewan@inf.ed.ac.uk>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -32,8 +32,9 @@ In order to provide globally unique IDs for each pair, a new attribute
 file, taking values 1, 2 or 3. The GID is formatted 'm-n', where 'm' is the
 challenge number and 'n' is the pair ID.
 """
-from nltk.corpus.reader.util import *
+
 from nltk.corpus.reader.api import *
+from nltk.corpus.reader.util import *
 from nltk.corpus.reader.xmldocs import *
 
 
@@ -82,7 +83,7 @@ class RTEPair:
         """
         self.challenge = challenge
         self.id = pair.attrib["id"]
-        self.gid = "%s-%s" % (self.challenge, self.id)
+        self.gid = f"{self.challenge}-{self.id}"
         self.text = pair[0].text
         self.hyp = pair[1].text
 
@@ -103,7 +104,7 @@ class RTEPair:
 
     def __repr__(self):
         if self.challenge:
-            return "<RTEPair: gid=%s-%s>" % (self.challenge, self.id)
+            return f"<RTEPair: gid={self.challenge}-{self.id}>"
         else:
             return "<RTEPair: id=%s>" % self.id
 

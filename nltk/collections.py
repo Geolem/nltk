@@ -1,19 +1,15 @@
 # Natural Language Toolkit: Collections
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Steven Bird <stevenbird1@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 import bisect
-from itertools import islice, chain
 from functools import total_ordering
+from itertools import chain, islice
 
-# this unused import is for python 2.7
-from collections import defaultdict, deque, Counter
-
-from nltk.internals import slice_bounds, raise_unorderable_types
-
+from nltk.internals import raise_unorderable_types, slice_bounds
 
 ##########################################################################
 # Ordered Dictionary
@@ -47,6 +43,21 @@ class OrderedDict(dict):
             raise KeyError()
         return self._default_factory()
 
+    def __reduce__(self):
+        # Reconstruct through __init__ from an ordered list of items so the
+        # subclass invariant (``_keys`` established before any ``__setitem__``)
+        # holds while unpickling. The stock dict-subclass reduce restores the
+        # items via ``__setitem__`` BEFORE the BUILD step that would create
+        # ``_keys``, so a non-empty instance fails to unpickle with
+        # ``AttributeError: 'OrderedDict' object has no attribute '_keys'``.
+        # Passing the ordered items to ``__init__`` sets ``_keys`` up front and
+        # preserves insertion order. ``_default_factory`` (if any) is carried as
+        # BUILD state applied after construction.
+        items = [(key, dict.__getitem__(self, key)) for key in self._keys]
+        if self._default_factory is None:
+            return (self.__class__, (items,))
+        return (self.__class__, (items,), {"_default_factory": self._default_factory})
+
     def __setitem__(self, key, item):
         dict.__setitem__(self, key, item)
         if key not in self._keys:
@@ -62,7 +73,6 @@ class OrderedDict(dict):
         return d
 
     def items(self):
-        # returns iterator under python 3 and list under python 2
         return zip(self.keys(), self.values())
 
     def keys(self, data=None, keys=None):
@@ -107,7 +117,6 @@ class OrderedDict(dict):
                 self._keys.append(key)
 
     def values(self):
-        # returns iterator under python 3
         return map(self.get, self._keys)
 
 
@@ -334,8 +343,7 @@ class LazyConcatenation(AbstractLazySequence):
                     sublist
                 ), "inconsistent list value (num elts)"
 
-            for value in sublist[max(0, start_index - index) :]:
-                yield value
+            yield from sublist[max(0, start_index - index) :]
 
             index += len(sublist)
             sublist_index += 1
@@ -424,7 +432,8 @@ class LazyMap(AbstractLazySequence):
                 for iterator in iterators:
                     try:
                         elements.append(next(iterator))
-                    except:  # FIXME: What is this except really catching? StopIteration?
+                    # FIXME: What is this except really catching? StopIteration?
+                    except StopIteration:
                         elements.append(None)
                 if elements == [None] * len(self._lists):
                     return
@@ -530,7 +539,7 @@ class LazyZip(LazyMap):
 
 class LazyEnumerate(LazyZip):
     """
-    A lazy sequence whose elements are tuples, each ontaining a count (from
+    A lazy sequence whose elements are tuples, each containing a count (from
     zero) and a value yielded by underlying sequence.  ``LazyEnumerate`` is
     useful for obtaining an indexed list. The tuples are constructed lazily
     -- i.e., when you read a value from the list, ``LazyEnumerate`` will
@@ -631,7 +640,7 @@ class Trie(dict):
         :type strings: list(str)
 
         """
-        super(Trie, self).__init__()
+        super().__init__()
         if strings:
             for string in strings:
                 self.insert(string)

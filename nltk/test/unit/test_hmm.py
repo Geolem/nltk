@@ -1,19 +1,20 @@
-from nltk.tag import hmm
 import pytest
+
+from nltk.tag import hmm
 
 
 def _wikipedia_example_hmm():
     # Example from wikipedia
-    # (http://en.wikipedia.org/wiki/Forward%E2%80%93backward_algorithm)
+    # (https://en.wikipedia.org/wiki/Forward%E2%80%93backward_algorithm)
 
-    states = ['rain', 'no rain']
-    symbols = ['umbrella', 'no umbrella']
+    states = ["rain", "no rain"]
+    symbols = ["umbrella", "no umbrella"]
 
     A = [[0.7, 0.3], [0.3, 0.7]]  # transition probabilities
     B = [[0.9, 0.1], [0.2, 0.8]]  # emission probabilities
     pi = [0.5, 0.5]  # initial probabilities
 
-    seq = ['umbrella', 'umbrella', 'no umbrella', 'umbrella', 'umbrella']
+    seq = ["umbrella", "umbrella", "no umbrella", "umbrella", "umbrella"]
     seq = list(zip(seq, [None] * len(seq)))
 
     model = hmm._create_hmm_tagger(states, symbols, A, B, pi)
@@ -25,7 +26,7 @@ def test_forward_probability():
 
     # example from p. 385, Huang et al
     model, states, symbols = hmm._market_hmm_example()
-    seq = [('up', None), ('up', None)]
+    seq = [("up", None), ("up", None)]
     expected = [[0.35, 0.02, 0.09], [0.1792, 0.0085, 0.0357]]
 
     fp = 2 ** model._forward_probability(seq)
@@ -77,5 +78,27 @@ def test_backward_probability():
     assert_array_almost_equal(wikipedia_results, bp, 4)
 
 
+def test_best_path_matches_simple():
+    model, states, symbols = hmm._market_hmm_example()
+    for seq in (["up"], ["up", "up", "down"], ["up", "down", "down", "up"]):
+        assert model.best_path(seq) == model.best_path_simple(seq)
+
+
+def test_tag_repeated_unseen_word():
+    from nltk.probability import LidstoneProbDist
+
+    train = [
+        [("the", "DT"), ("dog", "NN"), ("runs", "VB")],
+        [("a", "DT"), ("cat", "NN"), ("sleeps", "VB")],
+    ]
+    tagger = hmm.HiddenMarkovModelTrainer().train_supervised(
+        train, estimator=lambda fd, bins: LidstoneProbDist(fd, 0.1, bins)
+    )
+    words = ["the", "blorp", "blorp", "runs"]
+    expected = tagger.best_path_simple(words)
+    assert [tag for _, tag in tagger.tag(words)] == expected
+    assert tagger._symbols.count("blorp") == 1
+
+
 def setup_module(module):
-    pytest.importorskip('numpy')
+    pytest.importorskip("numpy")

@@ -1,14 +1,12 @@
 # Natural Language Toolkit: Clusterer Utilities
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Trevor Cohn <tacohn@cs.mu.oz.au>
 # Contributor: J Richard Snape
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
-from abc import abstractmethod
-
 import copy
-from sys import stdout
+from abc import abstractmethod
 from math import sqrt
 
 try:
@@ -17,6 +15,7 @@ except ImportError:
     pass
 
 from nltk.cluster.api import ClusterI
+from nltk.termsec import safe_print
 
 
 class VectorSpaceClusterer(ClusterI):
@@ -126,13 +125,13 @@ def euclidean_distance(u, v):
 def cosine_distance(u, v):
     """
     Returns 1 minus the cosine of the angle between vectors v and u. This is
-    equal to 1 - (u.v / |u||v|).
+    equal to ``1 - (u.v / |u||v|)``.
     """
     return 1 - (numpy.dot(u, v) / (sqrt(numpy.dot(u, u)) * sqrt(numpy.dot(v, v))))
 
 
 class _DendrogramNode:
-    """ Tree node of a dendrogram. """
+    """Tree node of a dendrogram."""
 
     def __init__(self, value, *children):
         self._value = value
@@ -201,7 +200,7 @@ class Dendrogram:
         :type   indices: seq of int
         """
         assert len(indices) >= 2
-        node = _DendrogramNode(self._merge, *[self._items[i] for i in indices])
+        node = _DendrogramNode(self._merge, *(self._items[i] for i in indices))
         self._merge += 1
         self._items[indices[0]] = node
         for i in indices[1:]:
@@ -222,6 +221,7 @@ class Dendrogram:
     def show(self, leaf_labels=[]):
         """
         Print the dendrogram in ASCII art to standard out.
+
         :param leaf_labels: an optional list of strings to use for labeling the
                             leaves
         :type leaf_labels: list
@@ -249,10 +249,13 @@ class Dendrogram:
 
         # display functions
         def format(centre, left=" ", right=" "):
-            return "%s%s%s" % (lhalf * left, centre, right * rhalf)
+            return f"{lhalf * left}{centre}{right * rhalf}"
 
         def display(str):
-            stdout.write(str)
+            # leaf labels come from the clustered data, so they are untrusted;
+            # the chokepoint also honours a redirected sys.stdout, which the
+            # import-time "from sys import stdout" binding never did
+            safe_print(str, end="")
 
         # for each merge, top down
         queue = [(root._value, root)]

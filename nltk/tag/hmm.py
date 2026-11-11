@@ -1,13 +1,13 @@
 # Natural Language Toolkit: Hidden Markov Model
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Trevor Cohn <tacohn@csse.unimelb.edu.au>
 #         Philip Blunsom <pcbl@csse.unimelb.edu.au>
 #         Tiago Tresoldi <tiago@tresoldi.pro.br> (fixes)
 #         Steven Bird <stevenbird1@gmail.com> (fixes)
 #         Joseph Frazee <jfrazee@mail.utexas.edu> (fixes)
 #         Steven Xu <xxu@student.unimelb.edu.au> (fixes)
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -69,7 +69,6 @@ For more information, please consult the source code for this module,
 which includes extensive demonstration code.
 """
 
-import re
 import itertools
 
 try:
@@ -77,21 +76,22 @@ try:
 except ImportError:
     pass
 
+from nltk import redos
+from nltk.metrics import accuracy
 from nltk.probability import (
-    FreqDist,
     ConditionalFreqDist,
     ConditionalProbDist,
-    DictionaryProbDist,
     DictionaryConditionalProbDist,
+    DictionaryProbDist,
+    FreqDist,
     LidstoneProbDist,
-    MutableProbDist,
     MLEProbDist,
+    MutableProbDist,
     RandomProbDist,
 )
-from nltk.metrics import accuracy
-from nltk.util import LazyMap, unique_list
 from nltk.tag.api import TaggerI
-
+from nltk.termsec import safe_print
+from nltk.util import LazyMap, unique_list
 
 _TEXT = 0  # index of text in a tuple
 _TAG = 1  # index of tag in a tuple
@@ -156,9 +156,8 @@ class HiddenMarkovModelTagger(TaggerI):
         unlabeled_sequence=None,
         transform=_identity,
         estimator=None,
-        **kwargs
+        **kwargs,
     ):
-
         if estimator is None:
 
             def estimator(fd, bins):
@@ -221,7 +220,7 @@ class HiddenMarkovModelTagger(TaggerI):
         :param verbose: boolean flag indicating whether training should be
             verbose or include printed output
         :type verbose: bool
-        :param max_iterations: number of Baum-Welch interations to perform
+        :param max_iterations: number of Baum-Welch iterations to perform
         :type max_iterations: int
         """
         return cls._train(labeled_sequence, test_sequence, unlabeled_sequence, **kwargs)
@@ -347,7 +346,8 @@ class HiddenMarkovModelTagger(TaggerI):
             self._create_cache()
             P, O, X, S = self._cache
             for symbol in symbols:
-                if symbol not in self._symbols:
+                # S maps every cached symbol, so only new ones scan the list
+                if symbol not in S and symbol not in self._symbols:
                     self._cache = None
                     self._symbols.append(symbol)
             # don't bother with the work if there aren't any new symbols
@@ -393,15 +393,16 @@ class HiddenMarkovModelTagger(TaggerI):
         P, O, X, S = self._cache
 
         V = np.zeros((T, N), np.float32)
-        B = -np.ones((T, N), np.int)
+        B = -np.ones((T, N), int)
 
         V[0] = P + O[:, S[unlabeled_sequence[0]]]
+        states = np.arange(N)
         for t in range(1, T):
-            for j in range(N):
-                vs = V[t - 1, :] + X[:, j]
-                best = np.argmax(vs)
-                V[t, j] = vs[best] + O[j, S[unlabeled_sequence[t]]]
-                B[t, j] = best
+            # vs[i, j] is the score of reaching state j at t from state i
+            vs = V[t - 1, :, np.newaxis] + X
+            best = np.argmax(vs, axis=0)
+            V[t] = vs[best, states] + O[:, S[unlabeled_sequence[t]]]
+            B[t] = best
 
         current = np.argmax(V[T - 1, :])
         sequence = [current]
@@ -519,7 +520,7 @@ class HiddenMarkovModelTagger(TaggerI):
             if cum_p <= p <= cum_p + add_p:
                 return sample
             cum_p += add_p
-        raise Exception("Invalid probability distribution - " "does not sum to one")
+        raise Exception("Invalid probability distribution - does not sum to one")
 
     def entropy(self, unlabeled_sequence):
         """
@@ -687,7 +688,7 @@ class HiddenMarkovModelTagger(TaggerI):
         return entropies
 
     def _transitions_matrix(self):
-        """ Return a matrix of transition log probabilities. """
+        """Return a matrix of transition log probabilities."""
         trans_iter = (
             self._transitions[sj].logprob(si)
             for sj in self._states
@@ -802,31 +803,33 @@ class HiddenMarkovModelTagger(TaggerI):
 
         if verbose:
             for test_sent, predicted_sent in zip(test_sequence, predicted_sequence):
-                print(
+                safe_print(
                     "Test:",
-                    " ".join("%s/%s" % (token, tag) for (token, tag) in test_sent),
+                    " ".join(f"{token}/{tag}" for (token, tag) in test_sent),
                 )
-                print()
-                print("Untagged:", " ".join("%s" % token for (token, tag) in test_sent))
-                print()
-                print(
+                safe_print()
+                safe_print(
+                    "Untagged:", " ".join("%s" % token for (token, tag) in test_sent)
+                )
+                safe_print()
+                safe_print(
                     "HMM-tagged:",
-                    " ".join("%s/%s" % (token, tag) for (token, tag) in predicted_sent),
+                    " ".join(f"{token}/{tag}" for (token, tag) in predicted_sent),
                 )
-                print()
-                print(
+                safe_print()
+                safe_print(
                     "Entropy:",
                     self.entropy([(token, None) for (token, tag) in predicted_sent]),
                 )
-                print()
-                print("-" * 60)
+                safe_print()
+                safe_print("-" * 60)
 
         test_tags = flatten(map(tags, test_sequence))
         predicted_tags = flatten(map(tags, predicted_sequence))
 
         acc = accuracy(test_tags, predicted_tags)
         count = sum(len(sent) for sent in test_sequence)
-        print("accuracy over %d tokens: %.2f" % (count, acc * 100))
+        safe_print("accuracy over %d tokens: %.2f" % (count, acc * 100))
 
     def __repr__(self):
         return "<HiddenMarkovModelTagger %d states and %d output symbols>" % (
@@ -883,7 +886,6 @@ class HiddenMarkovModelTrainer:
         return model
 
     def _baum_welch_step(self, sequence, model, symbol_to_number):
-
         N = len(model._states)
         M = len(model._symbols)
         T = len(sequence)
@@ -958,10 +960,10 @@ class HiddenMarkovModelTrainer:
         if not model:
             priors = RandomProbDist(self._states)
             transitions = DictionaryConditionalProbDist(
-                dict((state, RandomProbDist(self._states)) for state in self._states)
+                {state: RandomProbDist(self._states) for state in self._states}
             )
             outputs = DictionaryConditionalProbDist(
-                dict((state, RandomProbDist(self._symbols)) for state in self._states)
+                {state: RandomProbDist(self._symbols) for state in self._states}
             )
             model = HiddenMarkovModelTagger(
                 self._symbols, self._states, transitions, outputs, priors
@@ -972,24 +974,24 @@ class HiddenMarkovModelTrainer:
 
         N = len(self._states)
         M = len(self._symbols)
-        symbol_numbers = dict((sym, i) for i, sym in enumerate(self._symbols))
+        symbol_numbers = {sym: i for i, sym in enumerate(self._symbols)}
 
         # update model prob dists so that they can be modified
         # model._priors = MutableProbDist(model._priors, self._states)
 
         model._transitions = DictionaryConditionalProbDist(
-            dict(
-                (s, MutableProbDist(model._transitions[s], self._states))
+            {
+                s: MutableProbDist(model._transitions[s], self._states)
                 for s in self._states
-            )
+            }
         )
 
         if update_outputs:
             model._outputs = DictionaryConditionalProbDist(
-                dict(
-                    (s, MutableProbDist(model._outputs[s], self._symbols))
+                {
+                    s: MutableProbDist(model._outputs[s], self._symbols)
                     for s in self._states
-                )
+                }
             )
 
         model.reset_cache()
@@ -1064,7 +1066,7 @@ class HiddenMarkovModelTrainer:
             if iteration > 0 and abs(logprob - last_logprob) < epsilon:
                 converged = True
 
-            print("iteration", iteration, "logprob", logprob)
+            safe_print("iteration", iteration, "logprob", logprob)
             iteration += 1
             last_logprob = logprob
 
@@ -1192,13 +1194,13 @@ def _market_hmm_example():
 def demo():
     # demonstrates HMM probability calculation
 
-    print()
-    print("HMM probability calculation demo")
-    print()
+    safe_print()
+    safe_print("HMM probability calculation demo")
+    safe_print()
 
     model, states, symbols = _market_hmm_example()
 
-    print("Testing", model)
+    safe_print("Testing", model)
 
     for test in [
         ["up", "up"],
@@ -1206,18 +1208,17 @@ def demo():
         ["down"] * 5,
         ["unchanged"] * 5 + ["up"],
     ]:
-
         sequence = [(t, None) for t in test]
 
-        print("Testing with state sequence", test)
-        print("probability =", model.probability(sequence))
-        print("tagging =    ", model.tag([word for (word, tag) in sequence]))
-        print("p(tagged) =  ", model.probability(sequence))
-        print("H =          ", model.entropy(sequence))
-        print("H_exh =      ", model._exhaustive_entropy(sequence))
-        print("H(point) =   ", model.point_entropy(sequence))
-        print("H_exh(point)=", model._exhaustive_point_entropy(sequence))
-        print()
+        safe_print("Testing with state sequence", test)
+        safe_print("probability =", model.probability(sequence))
+        safe_print("tagging =    ", model.tag([word for (word, tag) in sequence]))
+        safe_print("p(tagged) =  ", model.probability(sequence))
+        safe_print("H =          ", model.entropy(sequence))
+        safe_print("H_exh =      ", model._exhaustive_entropy(sequence))
+        safe_print("H(point) =   ", model.point_entropy(sequence))
+        safe_print("H_exh(point)=", model._exhaustive_point_entropy(sequence))
+        safe_print()
 
 
 def load_pos(num_sents):
@@ -1225,7 +1226,7 @@ def load_pos(num_sents):
 
     sentences = brown.tagged_sents(categories="news")[:num_sents]
 
-    tag_re = re.compile(r"[*]|--|[^+*-]+")
+    tag_re = redos.compile(r"[*]|--|[^+*-]+")
     tag_set = set()
     symbols = set()
 
@@ -1247,11 +1248,11 @@ def load_pos(num_sents):
 def demo_pos():
     # demonstrates POS tagging using supervised training
 
-    print()
-    print("HMM POS tagging demo")
-    print()
+    safe_print()
+    safe_print("HMM POS tagging demo")
+    safe_print()
 
-    print("Training HMM...")
+    safe_print("Training HMM...")
     labelled_sequences, tag_set, symbols = load_pos(20000)
     trainer = HiddenMarkovModelTrainer(tag_set, symbols)
     hmm = trainer.train_supervised(
@@ -1259,7 +1260,7 @@ def demo_pos():
         estimator=lambda fd, bins: LidstoneProbDist(fd, 0.1, bins),
     )
 
-    print("Testing...")
+    safe_print("Testing...")
     hmm.test(labelled_sequences[:10], verbose=True)
 
 
@@ -1275,11 +1276,11 @@ def demo_pos_bw(
 ):
     # demonstrates the Baum-Welch algorithm in POS tagging
 
-    print()
-    print("Baum-Welch demo for POS tagging")
-    print()
+    safe_print()
+    safe_print("Baum-Welch demo for POS tagging")
+    safe_print()
 
-    print("Training HMM (supervised, %d sentences)..." % supervised)
+    safe_print("Training HMM (supervised, %d sentences)..." % supervised)
 
     sentences, tag_set, symbols = load_pos(test + supervised + unsupervised)
 
@@ -1296,7 +1297,7 @@ def demo_pos_bw(
 
     hmm.test(sentences[:test], verbose=verbose)
 
-    print("Training (unsupervised, %d sentences)..." % unsupervised)
+    safe_print("Training (unsupervised, %d sentences)..." % unsupervised)
     # it's rather slow - so only use 10 samples by default
     unlabeled = _untag(sentences[test + supervised :])
     hmm = trainer.train_unsupervised(
@@ -1309,9 +1310,9 @@ def demo_bw():
     # demo Baum Welch by generating some sequences and then performing
     # unsupervised training on them
 
-    print()
-    print("Baum-Welch demo for market example")
-    print()
+    safe_print()
+    safe_print("Baum-Welch demo for market example")
+    safe_print()
 
     model, states, symbols = _market_hmm_example()
 

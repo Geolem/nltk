@@ -1,8 +1,8 @@
 # Natural Language Toolkit: Graphical Representations for Trees
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -11,16 +11,16 @@ Graphically display a Tree.
 
 from tkinter import IntVar, Menu, Tk
 
-from nltk.util import in_idle
-from nltk.tree import Tree
 from nltk.draw.util import (
+    BoxWidget,
     CanvasFrame,
     CanvasWidget,
-    BoxWidget,
-    TextWidget,
-    ParenWidget,
     OvalWidget,
+    ParenWidget,
+    TextWidget,
 )
+from nltk.tree import Tree
+from nltk.util import in_idle
 
 ##//////////////////////////////////////////////////////
 ##  Tree Segment
@@ -416,7 +416,7 @@ class TreeSegmentWidget(CanvasWidget):
         self._managing = False
 
     def __repr__(self):
-        return "[TreeSeg %s: %s]" % (self._label, self._subtrees)
+        return f"[TreeSeg {self._label}: {self._subtrees}]"
 
 
 def _tree_to_treeseg(
@@ -478,7 +478,7 @@ def tree_to_treesegment(
     leaf_attribs = {}
     loc_attribs = {}
 
-    for (key, value) in list(attribs.items()):
+    for key, value in list(attribs.items()):
         if key[:5] == "tree_":
             tree_attribs[key[5:]] = value
         elif key[:5] == "node_":
@@ -852,7 +852,7 @@ class TreeWidget(CanvasWidget):
 
 class TreeView:
     def __init__(self, *trees):
-        from math import sqrt, ceil
+        from math import ceil, sqrt
 
         self._trees = trees
 

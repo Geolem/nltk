@@ -1,9 +1,9 @@
 #
 # Natural Language Toolkit: Sentiment Analyzer
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Pierpaolo Pantone <24alsecondo@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -15,16 +15,17 @@ purposes.
 import sys
 from collections import defaultdict
 
-from nltk.classify.util import apply_features, accuracy as eval_accuracy
+from nltk.classify.util import accuracy as eval_accuracy
+from nltk.classify.util import apply_features
 from nltk.collocations import BigramCollocationFinder
-from nltk.metrics import (
-    BigramAssocMeasures,
-    precision as eval_precision,
-    recall as eval_recall,
-    f_measure as eval_f_measure,
-)
-
+from nltk.metrics import BigramAssocMeasures
+from nltk.metrics import f_measure as eval_f_measure
+from nltk.metrics import precision as eval_precision
+from nltk.metrics import recall as eval_recall
+from nltk.pathsec import open as pathsec_open
+from nltk.picklesec import pickle_dump
 from nltk.probability import FreqDist
+from nltk.termsec import safe_print
 
 
 class SentimentAnalyzer:
@@ -39,6 +40,7 @@ class SentimentAnalyzer:
     def all_words(self, documents, labeled=None):
         """
         Return all words/tokens from the documents (with duplicates).
+
         :param documents: a list of (words, label) tuples.
         :param labeled: if `True`, assume that each document is represented by a
             (words, label) tuple: (list(str), str). If `False`, each document is
@@ -49,10 +51,10 @@ class SentimentAnalyzer:
         all_words = []
         if labeled is None:
             labeled = documents and isinstance(documents[0], tuple)
-        if labeled == True:
-            for words, sentiment in documents:
+        if labeled:
+            for words, _sentiment in documents:
                 all_words.extend(words)
-        elif labeled == False:
+        elif not labeled:
             for words in documents:
                 all_words.extend(words)
         return all_words
@@ -176,7 +178,7 @@ class SentimentAnalyzer:
         :return: A classifier instance trained on the training set.
         :rtype:
         """
-        print("Training classifier")
+        safe_print("Training classifier")
         self.classifier = trainer(training_set, **kwargs)
         if save_classifier:
             self.save_file(self.classifier, save_classifier)
@@ -187,11 +189,15 @@ class SentimentAnalyzer:
         """
         Store `content` in `filename`. Can be used to store a SentimentAnalyzer.
         """
-        print("Saving", filename, file=sys.stderr)
-        with open(filename, 'wb') as storage_file:
-            import pickle
+        safe_print("Saving", filename, file=sys.stderr)
+        # ``filename`` is caller-controlled; route the write through the pathsec
+        # sandbox so a classifier cannot be pickled to an arbitrary path outside
+        # the allowed NLTK data roots (GHSA-8mgp-746c-j5xp).
+        with pathsec_open(
+            filename, "wb", context="SentimentAnalyzer.save_file"
+        ) as storage_file:
             # The protocol=2 parameter is for python2 compatibility
-            pickle.dump(content, storage_file, protocol=2)
+            pickle_dump(content, storage_file, protocol=2)
 
     def evaluate(
         self,
@@ -217,9 +223,9 @@ class SentimentAnalyzer:
         """
         if classifier is None:
             classifier = self.classifier
-        print("Evaluating {0} results...".format(type(classifier).__name__))
+        safe_print(f"Evaluating {type(classifier).__name__} results...")
         metrics_results = {}
-        if accuracy == True:
+        if accuracy:
             accuracy_score = eval_accuracy(classifier, test_set)
             metrics_results["Accuracy"] = accuracy_score
 
@@ -233,23 +239,23 @@ class SentimentAnalyzer:
             test_results[observed].add(i)
 
         for label in labels:
-            if precision == True:
+            if precision:
                 precision_score = eval_precision(
                     gold_results[label], test_results[label]
                 )
-                metrics_results["Precision [{0}]".format(label)] = precision_score
-            if recall == True:
+                metrics_results[f"Precision [{label}]"] = precision_score
+            if recall:
                 recall_score = eval_recall(gold_results[label], test_results[label])
-                metrics_results["Recall [{0}]".format(label)] = recall_score
-            if f_measure == True:
+                metrics_results[f"Recall [{label}]"] = recall_score
+            if f_measure:
                 f_measure_score = eval_f_measure(
                     gold_results[label], test_results[label]
                 )
-                metrics_results["F-measure [{0}]".format(label)] = f_measure_score
+                metrics_results[f"F-measure [{label}]"] = f_measure_score
 
         # Print evaluation results (in alphabetical order)
-        if verbose == True:
+        if verbose:
             for result in sorted(metrics_results):
-                print("{0}: {1}".format(result, metrics_results[result]))
+                safe_print(f"{result}: {metrics_results[result]}")
 
         return metrics_results

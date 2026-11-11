@@ -1,9 +1,9 @@
 # Natural Language Toolkit: Classifier Utility Functions
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Edward Loper <edloper@gmail.com>
 #         Steven Bird <stevenbird1@gmail.com> (minor additions)
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -14,11 +14,13 @@ import math
 
 # from nltk.util import Deprecated
 import nltk.classify.util  # for accuracy & log_likelihood
+from nltk.termsec import safe_print
 from nltk.util import LazyMap
 
 ######################################################################
 # { Helper Functions
 ######################################################################
+
 
 # alternative name possibility: 'map_featurefunc()'?
 # alternative name possibility: 'detect_features()'?
@@ -78,7 +80,7 @@ def attested_labels(tokens):
         labels.  A classified token has the form ``(token, label)``.
     :type tokens: list
     """
-    return tuple(set(label for (tok, label) in tokens))
+    return tuple({label for (tok, label) in tokens})
 
 
 def log_likelihood(classifier, gold):
@@ -181,8 +183,9 @@ def binary_names_demo_features(name):
 
 
 def names_demo(trainer, features=names_demo_features):
-    from nltk.corpus import names
     import random
+
+    from nltk.corpus import names
 
     # Construct a list of classified names, using the names corpus.
     namelist = [(name, "male") for name in names.words("male.txt")] + [
@@ -196,13 +199,13 @@ def names_demo(trainer, features=names_demo_features):
     test = namelist[5000:5500]
 
     # Train up a classifier.
-    print("Training classifier...")
+    safe_print("Training classifier...")
     classifier = trainer([(features(n), g) for (n, g) in train])
 
     # Run the classifier on the test data.
-    print("Testing classifier...")
+    safe_print("Testing classifier...")
     acc = accuracy(classifier, [(features(n), g) for (n, g) in test])
-    print("Accuracy: %6.4f" % acc)
+    safe_print("Accuracy: %6.4f" % acc)
 
     # For classifiers that can find probabilities, show the log
     # likelihood and some sample probability distributions.
@@ -210,15 +213,15 @@ def names_demo(trainer, features=names_demo_features):
         test_featuresets = [features(n) for (n, g) in test]
         pdists = classifier.prob_classify_many(test_featuresets)
         ll = [pdist.logprob(gold) for ((name, gold), pdist) in zip(test, pdists)]
-        print("Avg. log likelihood: %6.4f" % (sum(ll) / len(test)))
-        print()
-        print("Unseen Names      P(Male)  P(Female)\n" + "-" * 40)
-        for ((name, gender), pdist) in list(zip(test, pdists))[:5]:
+        safe_print("Avg. log likelihood: %6.4f" % (sum(ll) / len(test)))
+        safe_print()
+        safe_print("Unseen Names      P(Male)  P(Female)\n" + "-" * 40)
+        for (name, gender), pdist in list(zip(test, pdists))[:5]:
             if gender == "male":
                 fmt = "  %-15s *%6.4f   %6.4f"
             else:
                 fmt = "  %-15s  %6.4f  *%6.4f"
-            print(fmt % (name, pdist.prob("male"), pdist.prob("female")))
+            safe_print(fmt % (name, pdist.prob("male"), pdist.prob("female")))
     except NotImplementedError:
         pass
 
@@ -227,8 +230,9 @@ def names_demo(trainer, features=names_demo_features):
 
 
 def partial_names_demo(trainer, features=names_demo_features):
-    from nltk.corpus import names
     import random
+
+    from nltk.corpus import names
 
     male_names = names.words("male.txt")
     female_names = names.words("female.txt")
@@ -251,13 +255,13 @@ def partial_names_demo(trainer, features=names_demo_features):
     random.shuffle(test)
 
     # Train up a classifier.
-    print("Training classifier...")
+    safe_print("Training classifier...")
     classifier = trainer(positive, unlabeled)
 
     # Run the classifier on the test data.
-    print("Testing classifier...")
+    safe_print("Testing classifier...")
     acc = accuracy(classifier, [(features(n), m) for (n, m) in test])
-    print("Accuracy: %6.4f" % acc)
+    safe_print("Accuracy: %6.4f" % acc)
 
     # For classifiers that can find probabilities, show the log
     # likelihood and some sample probability distributions.
@@ -265,15 +269,15 @@ def partial_names_demo(trainer, features=names_demo_features):
         test_featuresets = [features(n) for (n, m) in test]
         pdists = classifier.prob_classify_many(test_featuresets)
         ll = [pdist.logprob(gold) for ((name, gold), pdist) in zip(test, pdists)]
-        print("Avg. log likelihood: %6.4f" % (sum(ll) / len(test)))
-        print()
-        print("Unseen Names      P(Male)  P(Female)\n" + "-" * 40)
-        for ((name, is_male), pdist) in zip(test, pdists)[:5]:
-            if is_male == True:
+        safe_print("Avg. log likelihood: %6.4f" % (sum(ll) / len(test)))
+        safe_print()
+        safe_print("Unseen Names      P(Male)  P(Female)\n" + "-" * 40)
+        for (name, is_male), pdist in zip(test, pdists)[:5]:
+            if is_male:
                 fmt = "  %-15s *%6.4f   %6.4f"
             else:
                 fmt = "  %-15s  %6.4f  *%6.4f"
-            print(fmt % (name, pdist.prob(True), pdist.prob(False)))
+            safe_print(fmt % (name, pdist.prob(True), pdist.prob(False)))
     except NotImplementedError:
         pass
 
@@ -285,35 +289,36 @@ _inst_cache = {}
 
 
 def wsd_demo(trainer, word, features, n=1000):
-    from nltk.corpus import senseval
     import random
 
+    from nltk.corpus import senseval
+
     # Get the instances.
-    print("Reading data...")
+    safe_print("Reading data...")
     global _inst_cache
     if word not in _inst_cache:
         _inst_cache[word] = [(i, i.senses[0]) for i in senseval.instances(word)]
     instances = _inst_cache[word][:]
     if n > len(instances):
         n = len(instances)
-    senses = list(set(l for (i, l) in instances))
-    print("  Senses: " + " ".join(senses))
+    senses = list({l for (i, l) in instances})
+    safe_print("  Senses: " + " ".join(senses))
 
     # Randomly split the names into a test & train set.
-    print("Splitting into test & train...")
+    safe_print("Splitting into test & train...")
     random.seed(123456)
     random.shuffle(instances)
     train = instances[: int(0.8 * n)]
     test = instances[int(0.8 * n) : n]
 
     # Train up a classifier.
-    print("Training classifier...")
+    safe_print("Training classifier...")
     classifier = trainer([(features(i), l) for (i, l) in train])
 
     # Run the classifier on the test data.
-    print("Testing classifier...")
+    safe_print("Testing classifier...")
     acc = accuracy(classifier, [(features(i), l) for (i, l) in test])
-    print("Accuracy: %6.4f" % acc)
+    safe_print("Accuracy: %6.4f" % acc)
 
     # For classifiers that can find probabilities, show the log
     # likelihood and some sample probability distributions.
@@ -321,7 +326,7 @@ def wsd_demo(trainer, word, features, n=1000):
         test_featuresets = [features(i) for (i, n) in test]
         pdists = classifier.prob_classify_many(test_featuresets)
         ll = [pdist.logprob(gold) for ((name, gold), pdist) in zip(test, pdists)]
-        print("Avg. log likelihood: %6.4f" % (sum(ll) / len(test)))
+        safe_print("Avg. log likelihood: %6.4f" % (sum(ll) / len(test)))
     except NotImplementedError:
         pass
 

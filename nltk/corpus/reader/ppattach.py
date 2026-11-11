@@ -1,9 +1,9 @@
 # Natural Language Toolkit: PP Attachment Corpus Reader
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Steven Bird <stevenbird1@gmail.com>
 #         Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -38,8 +38,8 @@ The PP Attachment Corpus is distributed with NLTK with the permission
 of the author.
 """
 
-from nltk.corpus.reader.util import *
 from nltk.corpus.reader.api import *
+from nltk.corpus.reader.util import *
 
 
 class PPAttachment:

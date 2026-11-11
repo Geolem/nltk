@@ -1,9 +1,9 @@
 # Natural Language Toolkit: String Category Corpus Reader
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Steven Bird <stevenbird1@gmail.com>
 #         Edward Loper <edloper@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -17,9 +17,11 @@ DESC:def What is an atom ?
 NUM:date When did Hawaii become a state ?
 """
 
+from nltk.corpus.reader.api import *
+
 # based on PPAttachmentCorpusReader
 from nltk.corpus.reader.util import *
-from nltk.corpus.reader.api import *
+
 
 # [xx] Should the order of the tuple be reversed -- in most other places
 # in nltk, we use the form (data, tag) -- e.g., tagged words and

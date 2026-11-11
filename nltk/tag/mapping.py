@@ -1,9 +1,9 @@
 # Natural Language Toolkit: Tagset Mapping
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Nathan Schneider <nathan@cmu.edu>
 #         Steven Bird <stevenbird1@gmail.com>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 """
@@ -25,16 +25,16 @@ PRT - particles or other function words
 X - other: foreign words, typos, abbreviations
 . - punctuation
 
-@see: http://arxiv.org/abs/1104.2086 and http://code.google.com/p/universal-pos-tags/
+@see: https://arxiv.org/abs/1104.2086 and https://code.google.com/p/universal-pos-tags/
 
 """
 
 from collections import defaultdict
 from os.path import join
 
-from nltk.data import load
+from nltk.data import load, normalize_resource_url
 
-_UNIVERSAL_DATA = "taggers/universal_tagset"
+_UNIVERSAL_DATA = "taggers/universal_tagset/"
 _UNIVERSAL_TAGS = (
     "VERB",
     "NOUN",
@@ -51,12 +51,15 @@ _UNIVERSAL_TAGS = (
 )
 
 # _MAPPINGS = defaultdict(lambda: defaultdict(dict))
-# the mapping between tagset T1 and T2 returns UNK if appied to an unrecognized tag
+# the mapping between tagset T1 and T2 returns UNK if applied to an unrecognized tag
 _MAPPINGS = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: "UNK")))
 
 
 def _load_universal_map(fileid):
-    contents = load(join(_UNIVERSAL_DATA, fileid + ".map"), format="text")
+    resource = normalize_resource_url(
+        f"nltk:{_UNIVERSAL_DATA.rstrip('/')}/{fileid.lstrip('/')}.map"
+    )
+    contents = load(resource, format="text")
 
     # When mapping to the Universal Tagset,
     # map unknown inputs to 'X' not 'UNK'
@@ -68,10 +71,10 @@ def _load_universal_map(fileid):
             continue
         fine, coarse = line.split("\t")
 
-        assert coarse in _UNIVERSAL_TAGS, "Unexpected coarse tag: {}".format(coarse)
+        assert coarse in _UNIVERSAL_TAGS, f"Unexpected coarse tag: {coarse}"
         assert (
             fine not in _MAPPINGS[fileid]["universal"]
-        ), "Multiple entries for original tag: {}".format(fine)
+        ), f"Multiple entries for original tag: {fine}"
 
         _MAPPINGS[fileid]["universal"][fine] = coarse
 
@@ -88,28 +91,34 @@ def tagset_mapping(source, target):
 
     if source not in _MAPPINGS or target not in _MAPPINGS[source]:
         if target == "universal":
-            _load_universal_map(source)
-            # Added the new Russian National Corpus mappings because the
-            # Russian model for nltk.pos_tag() uses it.
-            _MAPPINGS["ru-rnc-new"]["universal"] = {
-                "A": "ADJ",
-                "A-PRO": "PRON",
-                "ADV": "ADV",
-                "ADV-PRO": "PRON",
-                "ANUM": "ADJ",
-                "CONJ": "CONJ",
-                "INTJ": "X",
-                "NONLEX": ".",
-                "NUM": "NUM",
-                "PARENTH": "PRT",
-                "PART": "PRT",
-                "PR": "ADP",
-                "PRAEDIC": "PRT",
-                "PRAEDIC-PRO": "PRON",
-                "S": "NOUN",
-                "S-PRO": "PRON",
-                "V": "VERB",
-            }
+            if source == "ru-rnc-new":
+                # ru-rnc-new.map is not shipped in the universal_tagset data package,
+                # so avoid _load_universal_map("ru-rnc-new") and use the embedded mapping.
+                # Ensure unknown tags map to 'X' (same behavior as _load_universal_map()).
+                _MAPPINGS[source][target].default_factory = lambda: "X"
+                _MAPPINGS[source][target].update(
+                    {
+                        "A": "ADJ",
+                        "A-PRO": "PRON",
+                        "ADV": "ADV",
+                        "ADV-PRO": "PRON",
+                        "ANUM": "ADJ",
+                        "CONJ": "CONJ",
+                        "INTJ": "X",
+                        "NONLEX": ".",
+                        "NUM": "NUM",
+                        "PARENTH": "PRT",
+                        "PART": "PRT",
+                        "PR": "ADP",
+                        "PRAEDIC": "PRT",
+                        "PRAEDIC-PRO": "PRON",
+                        "S": "NOUN",
+                        "S-PRO": "PRON",
+                        "V": "VERB",
+                    }
+                )
+            else:
+                _load_universal_map(source)
 
     return _MAPPINGS[source][target]
 

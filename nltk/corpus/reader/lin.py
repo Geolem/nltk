@@ -1,27 +1,35 @@
 # Natural Language Toolkit: Lin's Thesaurus
 #
-# Copyright (C) 2001-2021 NLTK Project
+# Copyright (C) 2001-2026 NLTK Project
 # Author: Dan Blanchard <dblanchard@ets.org>
-# URL: <http://nltk.org/>
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.txt
 
-import re
 from collections import defaultdict
 from functools import reduce
 
+from nltk import redos
 from nltk.corpus.reader import CorpusReader
+from nltk.pathsec import open as pathsec_open
+from nltk.termsec import safe_print
 
 
 class LinThesaurusCorpusReader(CorpusReader):
-    """ Wrapper for the LISP-formatted thesauruses distributed by Dekang Lin. """
+    """Wrapper for the LISP-formatted thesauruses distributed by Dekang Lin."""
 
-    # Compiled regular expression for extracting the key from the first line of each
-    # thesaurus entry
-    _key_re = re.compile(r'\("?([^"]+)"? \(desc [0-9.]+\).+')
+    # Compiled regular expression for extracting the key from the first line of
+    # each thesaurus entry. ``[^"]+`` does not exclude ``(``, so on a paren-heavy
+    # line the greedy group spans the remainder, the required `` (desc ..)`` is
+    # absent, and ``sub`` retries at every position -- O(n**2) over corpus data.
+    # redos.compile bounds match time with a wall-clock timeout (CWE-1333).
+    # The key is always at the start of an entry's first line, so pin the match
+    # there (\A): a repeated `(` anchor with a `[^"]` run whose terminator the
+    # attacker omits re-scanned at every `(`, O(n**2) under .sub (CWE-407).
+    _key_re = redos.compile(r'\A\("?([^"]{1,512})"? \(desc [0-9.]+\).+')
 
     @staticmethod
     def __defaultdict_factory():
-        """ Factory for creating defaultdict of defaultdict(dict)s """
+        """Factory for creating defaultdict of defaultdict(dict)s"""
         return defaultdict(dict)
 
     def __init__(self, root, badscore=0.0):
@@ -34,13 +42,18 @@ class LinThesaurusCorpusReader(CorpusReader):
         :type badscore: C{float}
         """
 
-        super(LinThesaurusCorpusReader, self).__init__(root, r"sim[A-Z]\.lsp")
+        super().__init__(root, r"sim[A-Z]\.lsp")
         self._thesaurus = defaultdict(LinThesaurusCorpusReader.__defaultdict_factory)
         self._badscore = badscore
         for path, encoding, fileid in self.abspaths(
             include_encoding=True, include_fileid=True
         ):
-            with open(path) as lin_file:
+            # Open through the pathsec sentinel (containment + O_NOFOLLOW /
+            # hardlink guards) so a symlinked/hardlinked simN.lsp inside the
+            # corpus root cannot leak an outside-root file (CWE-59, GHSA-p4rw).
+            with pathsec_open(
+                path, context="LinThesaurusCorpusReader", required_root=self.root
+            ) as lin_file:
                 first = True
                 for line in lin_file:
                     line = line.strip()
@@ -163,20 +176,20 @@ def demo():
 
     word1 = "business"
     word2 = "enterprise"
-    print("Getting synonyms for " + word1)
-    print(thes.synonyms(word1))
+    safe_print("Getting synonyms for " + word1)
+    safe_print(thes.synonyms(word1))
 
-    print("Getting scored synonyms for " + word1)
-    print(thes.scored_synonyms(word1))
+    safe_print("Getting scored synonyms for " + word1)
+    safe_print(thes.scored_synonyms(word1))
 
-    print("Getting synonyms from simN.lsp (noun subsection) for " + word1)
-    print(thes.synonyms(word1, fileid="simN.lsp"))
+    safe_print("Getting synonyms from simN.lsp (noun subsection) for " + word1)
+    safe_print(thes.synonyms(word1, fileid="simN.lsp"))
 
-    print("Getting synonyms from simN.lsp (noun subsection) for " + word1)
-    print(thes.synonyms(word1, fileid="simN.lsp"))
+    safe_print("Getting synonyms from simN.lsp (noun subsection) for " + word1)
+    safe_print(thes.synonyms(word1, fileid="simN.lsp"))
 
-    print("Similarity score for %s and %s:" % (word1, word2))
-    print(thes.similarity(word1, word2))
+    safe_print(f"Similarity score for {word1} and {word2}:")
+    safe_print(thes.similarity(word1, word2))
 
 
 if __name__ == "__main__":

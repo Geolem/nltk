@@ -2,13 +2,14 @@
 #
 # Author: Dan Garrette <dhgarrette@gmail.com>
 #
-# Copyright (C) 2001-2021 NLTK Project
-# URL: <http://nltk.org/>
+# Copyright (C) 2001-2026 NLTK Project
+# URL: <https://www.nltk.org/>
 # For license information, see LICENSE.TXT
 
 from itertools import chain
 
 from nltk.internals import Counter
+from nltk.termsec import safe_print
 
 
 class FStructure(dict):
@@ -119,8 +120,10 @@ class FStructure(dict):
             if not fstruct.pred:
                 fstruct.pred = (word, tag)
 
-            children = [depgraph.nodes[idx] for idx in
-                        chain.from_iterable(node["deps"].values())]
+            children = [
+                depgraph.nodes[idx]
+                for idx in chain.from_iterable(node["deps"].values())
+            ]
             for child in children:
                 fstruct.safeappend(
                     child["rel"],
@@ -191,15 +194,15 @@ class FStructure(dict):
             for item in self[feature]:
                 if isinstance(item, FStructure):
                     next_indent = indent + len(feature) + 3 + len(self.label)
-                    accum += "\n%s%s %s" % (
+                    accum += "\n{}{} {}".format(
                         " " * (indent),
                         feature,
                         item.pretty_format(next_indent),
                     )
                 elif isinstance(item, tuple):
-                    accum += "\n%s%s '%s'" % (" " * (indent), feature, item[0])
+                    accum += "\n{}{} '{}'".format(" " * (indent), feature, item[0])
                 elif isinstance(item, list):
-                    accum += "\n%s%s {%s}" % (
+                    accum += "\n{}{} {{{}}}".format(
                         " " * (indent),
                         feature,
                         ("\n%s" % (" " * (indent + len(feature) + 2))).join(item),
@@ -252,7 +255,7 @@ dog     NN      3       OBJ
 
     depgraphs = [dg1, dg2, dg3, dg4]
     for dg in depgraphs:
-        print(FStructure.read_depgraph(dg))
+        safe_print(FStructure.read_depgraph(dg))
 
 
 if __name__ == "__main__":
